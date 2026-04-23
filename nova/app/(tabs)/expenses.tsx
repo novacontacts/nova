@@ -173,6 +173,9 @@ export default function ExpensesScreen() {
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         <View style={styles.header}>
           <Text style={styles.heading}>Utgifter</Text>
+          <TouchableOpacity onPress={() => router.push('/import-csv')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={styles.importLink}>Importera</Text>
+          </TouchableOpacity>
         </View>
 
         {isError ? (
@@ -222,8 +225,12 @@ export default function ExpensesScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingHorizontal: spacing.base, paddingTop: spacing.base, paddingBottom: spacing.sm },
+  header: {
+    paddingHorizontal: spacing.base, paddingTop: spacing.base, paddingBottom: spacing.sm,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
   heading: { fontSize: typography['2xl'], fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
+  importLink: { fontSize: typography.sm, fontWeight: '600', color: colors.accentFrom },
 
   sectionHeader: {
     backgroundColor: colors.bg,

@@ -115,6 +115,7 @@ export default function RootLayout() {
           <Stack.Screen name="add-expense" options={{ presentation: 'modal' }} />
           <Stack.Screen name="add-category" options={{ presentation: 'modal' }} />
           <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="import-csv" options={{ presentation: 'modal' }} />
         </Stack>
       </QueryClientProvider>
     </GestureHandlerRootView>

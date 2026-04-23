@@ -55,6 +55,7 @@ export type Expense = {
   recurring_id: string | null;
   reviewed: boolean;
   currency?: string;        // default 'SEK' (satt av DB)
+  source_hash?: string;     // för CSV-importdubblettdetektering
   updated_at: string | null;
   updated_by: string | null;
   created_at: string;
