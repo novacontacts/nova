@@ -40,10 +40,11 @@ function ExpenseRow({ expense, myId }: { expense: Expense; myId: string }) {
   const myShare = expense.is_shared
     ? expense.amount * (isPaidByMe ? expense.split_ratio : 1 - expense.split_ratio)
     : expense.amount;
+  const iconBg = (expense.category?.color ?? colors.accentFrom) + '28';
 
   return (
     <View style={styles.row}>
-      <View style={styles.iconWrap}>
+      <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
         <Text style={styles.icon}>{expense.category?.icon ?? '📦'}</Text>
       </View>
       <View style={styles.rowMid}>
@@ -51,22 +52,14 @@ function ExpenseRow({ expense, myId }: { expense: Expense; myId: string }) {
           {expense.description || expense.category?.name || 'Utgift'}
         </Text>
         <View style={styles.rowMeta}>
-          {expense.is_shared && (
-            <View style={styles.sharedBadge}>
-              <Text style={styles.sharedText}>Delad</Text>
-            </View>
-          )}
-          {expense.updated_at && (
-            <View style={styles.editedBadge}>
-              <Text style={styles.editedText}>Ändrad</Text>
-            </View>
-          )}
+          {expense.is_shared && <Text style={styles.sharedDot}>Delad · </Text>}
           <Text style={styles.rowDate}>{formatDate(expense.date)}</Text>
+          {expense.updated_at && <Text style={styles.editedMark}> · ✎</Text>}
         </View>
       </View>
       <View style={styles.rowRight}>
         <Text style={[styles.rowAmount, !isPaidByMe && styles.rowAmountOwed]}>
-          {isPaidByMe ? '+' : '-'}{formatAmount(expense.is_shared ? myShare : expense.amount)}
+          {isPaidByMe ? '+' : '−'}{formatAmount(expense.is_shared ? myShare : expense.amount)}
         </Text>
         {expense.is_shared && (
           <Text style={styles.rowTotal}>{formatAmount(expense.amount)} totalt</Text>
@@ -77,15 +70,9 @@ function ExpenseRow({ expense, myId }: { expense: Expense; myId: string }) {
 }
 
 function SwipeableRow({
-  expense,
-  myId,
-  onDelete,
-  onEdit,
+  expense, myId, onDelete, onEdit,
 }: {
-  expense: Expense;
-  myId: string;
-  onDelete: () => void;
-  onEdit: () => void;
+  expense: Expense; myId: string; onDelete: () => void; onEdit: () => void;
 }) {
   const swipeRef = useRef<Swipeable>(null);
 
@@ -93,14 +80,10 @@ function SwipeableRow({
     <TouchableOpacity
       style={styles.deleteAction}
       onPress={() => {
-        Alert.alert(
-          'Radera utgift?',
-          'Den här åtgärden kan inte ångras.',
-          [
-            { text: 'Avbryt', style: 'cancel', onPress: () => swipeRef.current?.close() },
-            { text: 'Radera', style: 'destructive', onPress: onDelete },
-          ]
-        );
+        Alert.alert('Radera utgift?', 'Den här åtgärden kan inte ångras.', [
+          { text: 'Avbryt', style: 'cancel', onPress: () => swipeRef.current?.close() },
+          { text: 'Radera', style: 'destructive', onPress: onDelete },
+        ]);
       }}
       activeOpacity={0.85}
     >
@@ -112,10 +95,7 @@ function SwipeableRow({
   const renderLeftActions = () => (
     <TouchableOpacity
       style={styles.editAction}
-      onPress={() => {
-        swipeRef.current?.close();
-        onEdit();
-      }}
+      onPress={() => { swipeRef.current?.close(); onEdit(); }}
       activeOpacity={0.85}
     >
       <Text style={styles.actionIcon}>✏️</Text>
@@ -173,7 +153,10 @@ export default function ExpensesScreen() {
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         <View style={styles.header}>
           <Text style={styles.heading}>Utgifter</Text>
-          <TouchableOpacity onPress={() => router.push('/import-csv')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity
+            onPress={() => router.push('/import-csv')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <Text style={styles.importLink}>Importera</Text>
           </TouchableOpacity>
         </View>
@@ -196,7 +179,9 @@ export default function ExpensesScreen() {
                 <View style={styles.empty}>
                   <Text style={styles.emptyIcon}>🧾</Text>
                   <Text style={styles.emptyTitle}>Inga utgifter än</Text>
-                  <Text style={styles.emptySub}>Tryck på + för att lägga till din första utgift</Text>
+                  <Text style={styles.emptySub}>
+                    Tryck på + för att lägga till din första utgift
+                  </Text>
                 </View>
               ) : null
             }
@@ -209,12 +194,16 @@ export default function ExpensesScreen() {
               />
             )}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
-            SectionSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+            SectionSeparatorComponent={() => <View style={{ height: spacing.xs }} />}
           />
         )}
       </Animated.View>
 
-      <TouchableOpacity style={styles.fab} onPress={() => router.push('/add-expense')} activeOpacity={0.85}>
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/add-expense')}
+        activeOpacity={0.85}
+      >
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
 
@@ -225,9 +214,14 @@ export default function ExpensesScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+
   header: {
-    paddingHorizontal: spacing.base, paddingTop: spacing.base, paddingBottom: spacing.sm,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.base,
+    paddingBottom: spacing.sm,
   },
   heading: { fontSize: typography['2xl'], fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
   importLink: { fontSize: typography.sm, fontWeight: '600', color: colors.accentFrom },
@@ -235,18 +229,19 @@ const styles = StyleSheet.create({
   sectionHeader: {
     backgroundColor: colors.bg,
     paddingHorizontal: spacing.base,
-    paddingTop: spacing.md,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.xs,
   },
   sectionTitle: {
-    fontSize: typography.sm,
+    fontSize: typography.xs,
     fontWeight: '700',
-    color: colors.textSecondary,
+    color: colors.textDisabled,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
 
   list: { paddingBottom: 100 },
+
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -255,36 +250,37 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     backgroundColor: colors.bg,
   },
-  iconWrap: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  icon: { fontSize: 22 },
+  iconCircle: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  icon: { fontSize: 20 },
   rowMid: { flex: 1, gap: 3 },
   rowTitle: { fontSize: typography.base, fontWeight: '500', color: colors.textPrimary },
-  rowMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  sharedBadge: { backgroundColor: colors.surfaceRaised, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
-  sharedText: { fontSize: typography.xs, color: colors.accentFrom, fontWeight: '600' },
-  editedBadge: { backgroundColor: colors.surfaceRaised, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
-  editedText: { fontSize: typography.xs, color: colors.textDisabled, fontWeight: '500' },
+  rowMeta: { flexDirection: 'row', alignItems: 'center' },
+  sharedDot: { fontSize: typography.sm, color: colors.accentFrom, fontWeight: '500' },
+  editedMark: { fontSize: typography.sm, color: colors.textDisabled },
   rowDate: { fontSize: typography.sm, color: colors.textSecondary },
   rowRight: { alignItems: 'flex-end', gap: 2 },
   rowAmount: { fontSize: typography.base, fontWeight: '600', color: colors.positive },
   rowAmountOwed: { color: colors.negative },
   rowTotal: { fontSize: typography.xs, color: colors.textDisabled },
-  separator: { height: 1, backgroundColor: colors.borderSubtle, marginLeft: 44 + spacing.base + spacing.md },
+  separator: {
+    height: 1,
+    backgroundColor: colors.borderSubtle,
+    marginLeft: 44 + spacing.base + spacing.md,
+  },
 
   deleteAction: {
     backgroundColor: colors.negative,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
+    justifyContent: 'center', alignItems: 'center', width: 80,
   },
   editAction: {
     backgroundColor: colors.accentFrom,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
+    justifyContent: 'center', alignItems: 'center', width: 80,
   },
   actionIcon: { fontSize: 20 },
-  actionLabel: { fontSize: typography.xs, color: colors.textPrimary, fontWeight: '600', marginTop: 4 },
+  actionLabel: { fontSize: typography.xs, color: '#fff', fontWeight: '600', marginTop: 4 },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: spacing.md, paddingHorizontal: spacing.base },
   emptyIcon: { fontSize: 48 },
@@ -298,5 +294,5 @@ const styles = StyleSheet.create({
     shadowColor: colors.accentFrom, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
   },
-  fabIcon: { fontSize: 28, color: colors.textPrimary, lineHeight: 32 },
+  fabIcon: { fontSize: 28, color: '#fff', lineHeight: 32 },
 });

@@ -1,26 +1,26 @@
 export const colors = {
   // Backgrounds
-  bg: '#0A0A0F',
-  surface: '#13131A',
-  surfaceRaised: '#1C1C26',
+  bg: '#09090F',
+  surface: '#111119',
+  surfaceRaised: '#19191F',
 
   // Text
-  textPrimary: '#F5F5F7',
-  textSecondary: '#8E8E93',
-  textDisabled: '#48484A',
+  textPrimary: '#F7F7F8',
+  textSecondary: '#87879A',
+  textDisabled: '#3E3E52',
 
-  // Accent – nebulosa gradient endpoints
-  accentFrom: '#A855F7', // lila
-  accentTo: '#EC4899',   // rosa
+  // Accent
+  accentFrom: '#9333EA',
+  accentTo: '#7C3AED',
 
   // Semantic
-  positive: '#34C759',
-  negative: '#FF453A',
-  warning: '#FF9F0A',
+  positive: '#22C55E',
+  negative: '#EF4444',
+  warning: '#F59E0B',
 
-  // Borders
-  border: '#2C2C3A',
-  borderSubtle: '#1E1E2A',
+  // Borders (subtle — used sparingly)
+  border: '#1D1D2A',
+  borderSubtle: '#141420',
 } as const;
 
 export const gradients = {
@@ -28,13 +28,11 @@ export const gradients = {
 } as const;
 
 export const typography = {
-  // Font families (SF Pro via system default on iOS)
-  fontRegular: undefined,  // system default
+  fontRegular: undefined,
   fontMedium: undefined,
   fontSemibold: undefined,
   fontBold: undefined,
 
-  // Sizes
   xs: 11,
   sm: 13,
   base: 15,
@@ -44,6 +42,8 @@ export const typography = {
   '2xl': 28,
   '3xl': 34,
   '4xl': 40,
+  '5xl': 52,
+  '6xl': 64,
 } as const;
 
 export const spacing = {
@@ -63,6 +63,7 @@ export const radius = {
   md: 12,
   lg: 16,
   xl: 20,
+  '2xl': 24,
   full: 9999,
 } as const;
 
