@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
+import { AppState } from 'react-native';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/store/auth';
 import { useHouseholdStore } from '@/lib/store/household';
+import { useLocalAuth } from '@/hooks/useLocalAuth';
 
 try { SplashScreen.preventAutoHideAsync(); } catch (_) {}
 
@@ -17,8 +19,10 @@ const queryClient = new QueryClient();
 function AuthGate() {
   const router = useRouter();
   const segments = useSegments();
-  const { session, initialized, setSession, fetchProfile } = useAuthStore();
+  const { session, initialized, setSession, fetchProfile, signOut } = useAuthStore();
   const { household, fetchHousehold, reset } = useHouseholdStore();
+  const { authenticate, isEnabled } = useLocalAuth();
+  const appStateRef = useRef(AppState.currentState);
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(false);
 
@@ -50,6 +54,19 @@ function AuthGate() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!isEnabled) return;
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      const prev = appStateRef.current;
+      appStateRef.current = nextState;
+      if (prev.match(/inactive|background/) && nextState === 'active' && session) {
+        const ok = await authenticate();
+        if (!ok) signOut();
+      }
+    });
+    return () => sub.remove();
+  }, [isEnabled, session]);
 
   useEffect(() => {
     if (!onboardingChecked || !initialized) return;
@@ -86,7 +103,7 @@ function AuthGate() {
 
 export default function RootLayout() {
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <QueryClientProvider client={queryClient}>
         <StatusBar style="light" />
         <AuthGate />
@@ -97,8 +114,9 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="add-expense" options={{ presentation: 'modal' }} />
           <Stack.Screen name="add-category" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         </Stack>
       </QueryClientProvider>
-    </View>
+    </GestureHandlerRootView>
   );
 }

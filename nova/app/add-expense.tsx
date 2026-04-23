@@ -1,76 +1,147 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
+  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCategories } from '@/hooks/useCategories';
-import { useAddExpense } from '@/hooks/useExpenses';
+import { useAddExpense, useUpdateExpense, useExpense } from '@/hooks/useExpenses';
+import { useMerchantPatterns, useRecordMerchantPattern } from '@/hooks/useMerchantPatterns';
 import { useHouseholdStore } from '@/lib/store/household';
+import { useAuthStore } from '@/lib/store/auth';
+import { SplitSlider } from '@/components/ui/SplitSlider';
 import { colors, typography, spacing, radius } from '@/constants/theme';
 
 type SplitType = '50/50' | 'custom';
 
 export default function AddExpenseScreen() {
   const router = useRouter();
-  const { quick } = useLocalSearchParams<{ quick?: string }>();
+  const { quick, id } = useLocalSearchParams<{ quick?: string; id?: string }>();
   const isQuick = quick === 'true';
+  const isEditing = !!id;
+
   const { household } = useHouseholdStore();
+  const { user } = useAuthStore();
   const { data: categories = [] } = useCategories();
   const addExpense = useAddExpense();
+  const updateExpense = useUpdateExpense();
+  const { data: existingExpense } = useExpense(id ?? null);
+  const { data: patterns = [] } = useMerchantPatterns();
+  const recordPattern = useRecordMerchantPattern();
 
   const [amountStr, setAmountStr] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [isShared, setIsShared] = useState(!!household);
   const [splitType, setSplitType] = useState<SplitType>('50/50');
-  const [customPct, setCustomPct] = useState('50');
+  const [customPct, setCustomPct] = useState(50);
   const [error, setError] = useState('');
+  const [manualCategory, setManualCategory] = useState(false);
+
+  useEffect(() => {
+    if (!existingExpense) return;
+    setAmountStr(existingExpense.amount.toString());
+    setDescription(existingExpense.description ?? '');
+    setCategoryId(existingExpense.category_id);
+    setIsShared(existingExpense.is_shared);
+    setSplitType(existingExpense.split_type);
+    setCustomPct(Math.round(existingExpense.split_ratio * 100));
+  }, [existingExpense]);
+
+  const suggestion = useMemo(() => {
+    if (!description.trim() || patterns.length === 0 || manualCategory) return null;
+    const words = description.toLowerCase().trim().split(/\s+/).filter(w => w.length >= 2);
+    return patterns
+      .filter(p => words.some(w => p.pattern.includes(w) || w.includes(p.pattern)))
+      .sort((a, b) => b.hit_count - a.hit_count)[0] ?? null;
+  }, [description, patterns, manualCategory]);
+
+  useEffect(() => {
+    if (suggestion && !isEditing) setCategoryId(suggestion.category_id);
+  }, [suggestion?.category_id]);
 
   const amount = parseFloat(amountStr.replace(',', '.')) || 0;
-  const splitRatio = splitType === '50/50' ? 0.5 : Math.min(100, Math.max(0, parseFloat(customPct) || 50)) / 100;
+  const splitRatio = splitType === '50/50' ? 0.5 : customPct / 100;
   const hasHousehold = !!household;
+
+  const partner = useHouseholdStore((s) =>
+    s.members.find((m) => m.user_id !== user?.id)?.profile
+  );
+
+  const isPending = addExpense.isPending || updateExpense.isPending;
 
   async function handleSave() {
     if (amount <= 0) { setError('Ange ett belopp.'); return; }
     setError('');
 
-    await addExpense.mutateAsync({
-      amount,
-      description: description.trim() || null,
-      category_id: categoryId,
-      date: new Date().toISOString().split('T')[0],
-      is_shared: isQuick ? false : isShared,
-      split_type: splitType,
-      split_ratio: splitRatio,
-      is_recurring: false,
-      recurring_id: null,
-      reviewed: !isQuick, // quick-add → hamnar i swipe-kön
-    });
-
-    router.back();
+    try {
+      if (isEditing && id) {
+        await updateExpense.mutateAsync({
+          id,
+          updates: {
+            amount,
+            description: description.trim() || null,
+            category_id: categoryId,
+            is_shared: isShared,
+            split_type: splitType,
+            split_ratio: splitRatio,
+            household_id: isShared ? (household?.id ?? null) : null,
+            updated_by: user?.id,
+            updated_at: new Date().toISOString(),
+          },
+        });
+      } else {
+        await addExpense.mutateAsync({
+          amount,
+          description: description.trim() || null,
+          category_id: categoryId,
+          date: new Date().toISOString().split('T')[0],
+          is_shared: isQuick ? false : isShared,
+          split_type: splitType,
+          split_ratio: splitRatio,
+          is_recurring: false,
+          recurring_id: null,
+          reviewed: !isQuick,
+          currency: 'SEK',
+        });
+      }
+      if (description.trim() && categoryId) {
+        recordPattern.mutate({ pattern: description.trim(), category_id: categoryId });
+      }
+      router.back();
+    } catch {
+      Alert.alert('Fel', 'Kunde inte spara utgiften. Försök igen.');
+    }
   }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={styles.cancel}>Avbryt</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>{isQuick ? 'Snabb-lägg till' : 'Ny utgift'}</Text>
-          <TouchableOpacity onPress={handleSave} disabled={addExpense.isPending}>
-            {addExpense.isPending
+          <Text style={styles.title}>
+            {isEditing ? 'Redigera utgift' : isQuick ? 'Snabb-lägg till' : 'Ny utgift'}
+          </Text>
+          <TouchableOpacity onPress={handleSave} disabled={isPending}>
+            {isPending
               ? <ActivityIndicator color={colors.accentFrom} size="small" />
               : <Text style={styles.save}>Spara</Text>}
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Belopp */}
           <View style={styles.amountRow}>
             <TextInput
@@ -80,7 +151,7 @@ export default function AddExpenseScreen() {
               placeholder="0"
               placeholderTextColor={colors.textDisabled}
               keyboardType="decimal-pad"
-              autoFocus
+              autoFocus={!isEditing}
               selectionColor={colors.accentFrom}
             />
             <Text style={styles.currency}>kr</Text>
@@ -95,25 +166,33 @@ export default function AddExpenseScreen() {
             placeholder="Beskrivning (valfritt)"
             placeholderTextColor={colors.textDisabled}
             selectionColor={colors.accentFrom}
+            returnKeyType="done"
           />
 
           {/* Kategorier */}
           <Text style={styles.label}>Kategori</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
             <View style={styles.catRow}>
-              {categories.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.catChip, categoryId === cat.id && styles.catChipActive]}
-                  onPress={() => setCategoryId(cat.id === categoryId ? null : cat.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.catIcon}>{cat.icon}</Text>
-                  <Text style={[styles.catName, categoryId === cat.id && styles.catNameActive]}>
-                    {cat.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {categories.map((cat) => {
+                const isActive = categoryId === cat.id;
+                const isSuggested = suggestion?.category_id === cat.id;
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[styles.catChip, isActive && styles.catChipActive]}
+                    onPress={() => { setCategoryId(cat.id === categoryId ? null : cat.id); setManualCategory(true); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.catIcon}>{cat.icon}</Text>
+                    <Text style={[styles.catName, isActive && styles.catNameActive]}>
+                      {cat.name}
+                    </Text>
+                    {isSuggested && !manualCategory && (
+                      <Text style={styles.suggestionDot}>⚡</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
               <TouchableOpacity
                 style={styles.catChip}
                 onPress={() => router.push('/add-category')}
@@ -126,7 +205,7 @@ export default function AddExpenseScreen() {
           </ScrollView>
 
           {/* Privat / Delad */}
-          {hasHousehold && (
+          {hasHousehold && !isQuick && (
             <>
               <Text style={styles.label}>Typ</Text>
               <View style={styles.toggleRow}>
@@ -170,27 +249,18 @@ export default function AddExpenseScreen() {
               </View>
 
               {splitType === 'custom' && (
-                <View style={styles.customSplitRow}>
-                  <Text style={styles.splitLabel}>Din andel:</Text>
-                  <View style={styles.pctInputRow}>
-                    <TextInput
-                      style={styles.pctInput}
-                      value={customPct}
-                      onChangeText={setCustomPct}
-                      keyboardType="number-pad"
-                      selectionColor={colors.accentFrom}
-                      maxLength={3}
-                    />
-                    <Text style={styles.pctSymbol}>%</Text>
-                  </View>
-                  <Text style={styles.splitLabel}>
-                    = {amount > 0 ? `${(amount * (parseFloat(customPct) / 100 || 0)).toFixed(0)} kr` : '—'}
-                  </Text>
-                </View>
+                <SplitSlider
+                  value={customPct}
+                  onChange={setCustomPct}
+                  amount={amount}
+                  myName="Du"
+                  partnerName={partner?.display_name ?? 'Partner'}
+                />
               )}
             </>
           )}
 
+          <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -263,6 +333,7 @@ const styles = StyleSheet.create({
   catIcon: { fontSize: 16 },
   catName: { fontSize: typography.sm, color: colors.textSecondary, fontWeight: '500' },
   catNameActive: { color: colors.accentFrom },
+  suggestionDot: { fontSize: 10 },
 
   toggleRow: {
     flexDirection: 'row',
@@ -276,10 +347,4 @@ const styles = StyleSheet.create({
   toggleActive: { backgroundColor: colors.surfaceRaised },
   toggleText: { fontSize: typography.base, color: colors.textSecondary, fontWeight: '500' },
   toggleTextActive: { color: colors.textPrimary, fontWeight: '600' },
-
-  customSplitRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  splitLabel: { fontSize: typography.base, color: colors.textSecondary },
-  pctInputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.accentFrom, paddingHorizontal: spacing.md },
-  pctInput: { fontSize: typography.xl, fontWeight: '700', color: colors.accentFrom, width: 56, textAlign: 'center' },
-  pctSymbol: { fontSize: typography.base, color: colors.accentFrom, fontWeight: '600' },
 });

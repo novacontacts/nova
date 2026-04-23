@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Linking } from 'react-native';
 import { Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
@@ -125,6 +125,18 @@ export default function SignupScreen() {
             <Button label="Skapa konto" onPress={handleSignup} loading={loading} style={styles.btn} />
           </View>
 
+          <Text style={styles.legalText}>
+            Genom att registrera dig godkänner du våra{' '}
+            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://novaapp.se/terms')}>
+              användarvillkor
+            </Text>
+            {' '}och{' '}
+            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://novaapp.se/privacy')}>
+              integritetspolicy
+            </Text>
+            .
+          </Text>
+
           <View style={styles.footer}>
             <Text style={styles.footerText}>Har du redan ett konto? </Text>
             <Link href="/(auth)/login" style={styles.link}>Logga in</Link>
@@ -144,6 +156,8 @@ const styles = StyleSheet.create({
   form: { gap: spacing.base },
   error: { fontSize: typography.sm, color: colors.negative, textAlign: 'center' },
   btn: { marginTop: spacing.sm },
+  legalText: { fontSize: typography.xs, color: colors.textDisabled, textAlign: 'center', lineHeight: 18 },
+  legalLink: { color: colors.textSecondary, textDecorationLine: 'underline' },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   footerText: { fontSize: typography.base, color: colors.textSecondary },
   link: { fontSize: typography.base, color: colors.accentFrom, fontWeight: '600' },

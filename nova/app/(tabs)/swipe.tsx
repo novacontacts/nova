@@ -1,8 +1,7 @@
-import { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { View as AnimatedView } from 'react-native';
 import { useExpenses, useUpdateExpense } from '@/hooks/useExpenses';
 import { useHouseholdStore } from '@/lib/store/household';
 import { SwipeCard } from '@/components/expenses/SwipeCard';
@@ -93,15 +92,25 @@ export default function SwipeScreen() {
 }
 
 function DoneState({ onAdd }: { onAdd: () => void }) {
+  const scale = useRef(new Animated.Value(0.8)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, bounciness: 12 }),
+      Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
   return (
-    <AnimatedView style={styles.done}>
+    <Animated.View style={[styles.done, { opacity, transform: [{ scale }] }]}>
       <Text style={styles.doneIcon}>✅</Text>
       <Text style={styles.doneTitle}>Allt klart!</Text>
       <Text style={styles.doneSub}>Inga fler utgifter att sortera just nu.</Text>
       <TouchableOpacity style={styles.addBtn} onPress={onAdd} activeOpacity={0.8}>
         <Text style={styles.addBtnText}>+ Snabb-lägg till utgift</Text>
       </TouchableOpacity>
-    </AnimatedView>
+    </Animated.View>
   );
 }
 

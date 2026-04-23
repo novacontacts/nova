@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
@@ -48,14 +48,14 @@ export default function DashboardScreen() {
     }).start();
   }, []);
 
-  const partner = members.find((m) => m.user_id !== profile?.id);
+  const otherMembers = members.filter((m) => m.user_id !== profile?.id);
   const greeting = profile?.display_name ? `Hej, ${profile.display_name}` : 'Hej!';
 
   const balanceColor = net > 0 ? colors.positive : net < 0 ? colors.negative : colors.textPrimary;
   const balanceLabel = net > 0
-    ? `${balancePartner?.display_name ?? 'Din sambo'} är skyldig dig`
+    ? `${balancePartner?.display_name ?? 'Hushållet'} är skyldigt dig`
     : net < 0
-    ? `Du är skyldig ${balancePartner?.display_name ?? 'din sambo'}`
+    ? `Du är skyldig ${balancePartner?.display_name ?? 'hushållet'}`
     : 'Ni är jämna';
 
   const absNet = Math.abs(net);
@@ -68,32 +68,52 @@ export default function DashboardScreen() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function handleSettle() {
-    if (!profile || !balancePartner || absNet < 1) return;
+  async function doSettle() {
+    try {
+      const fromUser = net < 0 ? profile!.id : balancePartner!.id;
+      const toUser   = net < 0 ? balancePartner!.id : profile!.id;
+      await createSettlement.mutateAsync({ amount: absNet, fromUser, toUser });
+    } catch (e: any) {
+      Alert.alert('Fel', e.message);
+    }
+  }
 
-    const fromUser = net < 0 ? profile.id : balancePartner.id;
-    const toUser   = net < 0 ? balancePartner.id : profile.id;
+  function confirmSettle() {
     const actionText = net < 0
-      ? `Du markerar att du betalat ${formattedNet} kr till ${balancePartner.display_name ?? 'din sambo'}.`
-      : `Du markerar att du mottagit ${formattedNet} kr från ${balancePartner.display_name ?? 'din sambo'}.`;
-
+      ? `Du markerar att du betalat ${formattedNet} kr till ${balancePartner?.display_name ?? 'din sambo'}.`
+      : `Du markerar att du mottagit ${formattedNet} kr från ${balancePartner?.display_name ?? 'din sambo'}.`;
     Alert.alert(
       'Markera som betald',
       `${actionText}\n\nSaldot nollställs.`,
       [
         { text: 'Avbryt', style: 'cancel' },
-        {
-          text: 'Bekräfta',
-          onPress: async () => {
-            try {
-              await createSettlement.mutateAsync({ amount: absNet, fromUser, toUser });
-            } catch (e: any) {
-              Alert.alert('Fel', e.message);
-            }
-          },
-        },
+        { text: 'Bekräfta', onPress: doSettle },
       ]
     );
+  }
+
+  function handleSettle() {
+    if (!profile || !balancePartner || absNet < 1) return;
+
+    if (net < 0) {
+      Alert.alert(
+        `Betala ${formattedNet} kr`,
+        `till ${balancePartner.display_name ?? 'din sambo'}`,
+        [
+          { text: 'Avbryt', style: 'cancel' },
+          {
+            text: '🔵 Öppna Swish',
+            onPress: () =>
+              Linking.openURL('swish://').catch(() =>
+                Alert.alert('Swish saknas', 'Swish verkar inte vara installerat på den här enheten.')
+              ),
+          },
+          { text: 'Markera manuellt', onPress: confirmSettle },
+        ]
+      );
+    } else {
+      confirmSettle();
+    }
   }
 
   return (
@@ -106,11 +126,8 @@ export default function DashboardScreen() {
             <Text style={styles.greeting}>{greeting}</Text>
             {household && <Text style={styles.householdName}>{household.name}</Text>}
           </View>
-          <TouchableOpacity onPress={() => Alert.alert('Logga ut', 'Är du säker?', [
-            { text: 'Avbryt', style: 'cancel' },
-            { text: 'Logga ut', style: 'destructive', onPress: signOut },
-          ])}>
-            <Text style={styles.signOut}>Logga ut</Text>
+          <TouchableOpacity onPress={() => router.push('/settings')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={styles.settingsIcon}>⚙️</Text>
           </TouchableOpacity>
         </View>
 
@@ -143,14 +160,18 @@ export default function DashboardScreen() {
         {household ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Hushåll</Text>
-            {partner ? (
-              <View style={styles.memberRow}>
-                <Text style={styles.memberIcon}>👤</Text>
-                <View>
-                  <Text style={styles.memberName}>{partner.profile?.display_name ?? partner.profile?.email}</Text>
-                  <Text style={styles.memberSub}>Din sambo</Text>
-                </View>
-              </View>
+            {otherMembers.length > 0 ? (
+              <>
+                {otherMembers.map((m) => (
+                  <View key={m.user_id} style={styles.memberRow}>
+                    <Text style={styles.memberIcon}>👤</Text>
+                    <View>
+                      <Text style={styles.memberName}>{m.profile?.display_name ?? m.profile?.email}</Text>
+                      <Text style={styles.memberSub}>Hushållsmedlem</Text>
+                    </View>
+                  </View>
+                ))}
+              </>
             ) : (
               <View style={styles.inviteBox}>
                 <Text style={styles.inviteLabel}>Bjud in din sambo</Text>
@@ -164,7 +185,12 @@ export default function DashboardScreen() {
           </View>
         ) : (
           <View style={styles.soloBox}>
-            <Text style={styles.soloText}>Du kör solo just nu.</Text>
+            <Text style={styles.soloIcon}>🏠</Text>
+            <Text style={styles.soloTitle}>Du kör solo just nu</Text>
+            <Text style={styles.soloText}>Skapa ett hushåll och bjud in din sambo för att dela utgifter och hålla koll på vem som är skyldig vad.</Text>
+            <TouchableOpacity style={styles.soloBtn} onPress={() => router.replace('/(setup)')} activeOpacity={0.8}>
+              <Text style={styles.soloBtnText}>Sätt upp ett hushåll →</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -180,7 +206,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   greeting: { fontSize: typography['2xl'], fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
   householdName: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },
-  signOut: { fontSize: typography.sm, color: colors.textSecondary },
+  settingsIcon: { fontSize: 22 },
 
   balanceCard: {
     backgroundColor: colors.surface,
@@ -229,8 +255,20 @@ const styles = StyleSheet.create({
   copyBtn: { fontSize: typography.sm, color: colors.accentFrom, fontWeight: '500' },
 
   soloBox: {
-    backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.base,
-    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl,
+    borderWidth: 1, borderColor: colors.border, gap: spacing.sm, alignItems: 'center',
   },
-  soloText: { fontSize: typography.base, color: colors.textSecondary },
+  soloIcon: { fontSize: 40 },
+  soloTitle: { fontSize: typography.lg, fontWeight: '700', color: colors.textPrimary },
+  soloText: { fontSize: typography.sm, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  soloBtn: {
+    marginTop: spacing.xs,
+    backgroundColor: colors.accentFrom + '20',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.accentFrom,
+  },
+  soloBtnText: { fontSize: typography.sm, fontWeight: '700', color: colors.accentFrom },
 });

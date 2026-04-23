@@ -78,6 +78,10 @@ CREATE TABLE expenses (
   split_ratio  DECIMAL(4,3) DEFAULT 0.5 CHECK (split_ratio >= 0 AND split_ratio <= 1),
   is_recurring BOOLEAN DEFAULT FALSE,
   recurring_id UUID,
+  reviewed     BOOLEAN DEFAULT FALSE,
+  currency     TEXT    DEFAULT 'SEK',
+  updated_at   TIMESTAMPTZ,
+  updated_by   UUID REFERENCES profiles(id),
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -154,3 +158,59 @@ CREATE POLICY "Avräkningar: se i hushåll" ON settlements FOR SELECT
   USING (household_id IN (SELECT household_id FROM household_members WHERE user_id = auth.uid()));
 CREATE POLICY "Avräkningar: skapa" ON settlements FOR INSERT
   WITH CHECK (from_user = auth.uid());
+
+-- ─── Merchant patterns (A4 – smart kategorisering) ──────────
+CREATE TABLE merchant_patterns (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id     UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  pattern     TEXT NOT NULL,
+  category_id UUID REFERENCES categories(id) ON DELETE CASCADE NOT NULL,
+  hit_count   INTEGER DEFAULT 1,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, pattern)
+);
+
+ALTER TABLE merchant_patterns ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "merchant_patterns: egna" ON merchant_patterns FOR ALL USING (user_id = auth.uid());
+
+CREATE OR REPLACE FUNCTION upsert_merchant_pattern(p_pattern TEXT, p_category_id UUID)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  INSERT INTO merchant_patterns (user_id, pattern, category_id)
+  VALUES (auth.uid(), lower(trim(p_pattern)), p_category_id)
+  ON CONFLICT (user_id, pattern)
+  DO UPDATE SET category_id = p_category_id, hit_count = merchant_patterns.hit_count + 1;
+END;
+$$;
+
+-- ─── RPCs (B1 – radera konto, B2 – lämna hushåll) ───────────
+CREATE OR REPLACE FUNCTION leave_household(p_household_id UUID)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_count INTEGER;
+BEGIN
+  DELETE FROM household_members WHERE user_id = auth.uid() AND household_id = p_household_id;
+  SELECT COUNT(*) INTO v_count FROM household_members WHERE household_id = p_household_id;
+  IF v_count = 0 THEN
+    DELETE FROM households WHERE id = p_household_id;
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION delete_my_account()
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  DELETE FROM profiles WHERE id = auth.uid();
+  BEGIN
+    DELETE FROM auth.users WHERE id = auth.uid();
+  EXCEPTION WHEN others THEN NULL;
+  END;
+END;
+$$;
+
+-- ─── Fas 4 – Migrationer (kör om databasen redan finns) ──────
+-- ALTER TABLE expenses
+--   ADD COLUMN IF NOT EXISTS reviewed    BOOLEAN DEFAULT FALSE,
+--   ADD COLUMN IF NOT EXISTS currency    TEXT    DEFAULT 'SEK',
+--   ADD COLUMN IF NOT EXISTS updated_at  TIMESTAMPTZ,
+--   ADD COLUMN IF NOT EXISTS updated_by  UUID REFERENCES profiles(id);
+-- UPDATE expenses SET reviewed = TRUE WHERE reviewed IS NULL;

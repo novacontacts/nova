@@ -49,6 +49,36 @@ export function useAddExpense() {
   });
 }
 
+export function useExpense(id: string | null) {
+  return useQuery({
+    queryKey: ['expense', id],
+    enabled: !!id,
+    queryFn: async (): Promise<Expense | null> => {
+      if (!id) return null;
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*, category:categories(id,name,icon,color,is_default,household_id), payer:profiles!paid_by(id,email,display_name,avatar_url,created_at)')
+        .eq('id', id)
+        .single();
+      if (error) throw error;
+      return data as unknown as Expense;
+    },
+  });
+}
+
+export function useDeleteExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+    },
+  });
+}
+
 export function useUpdateExpense() {
   const queryClient = useQueryClient();
   const { household } = useHouseholdStore();
@@ -115,14 +145,16 @@ export function useBalance() {
   const { data: settlements = [] } = useSettlements();
 
   const partner = members.find((m) => m.user_id !== user?.id);
+  // N-person: antal icke-betalande per delad utgift
+  const otherCount = Math.max(1, members.length - 1);
 
-  // Bruttobelopp från delade utgifter
-  let gross = 0; // positivt = partner är skyldig mig, negativt = jag är skyldig partner
+  // Bruttobelopp: positivt = andra är skyldiga mig, negativt = jag är skyldig
+  let gross = 0;
   for (const e of expenses.filter((e) => e.is_shared)) {
     if (e.paid_by === user?.id) {
-      gross += e.amount * (1 - e.split_ratio); // partners andel
+      gross += e.amount * (1 - e.split_ratio);           // summan de andra är skyldiga
     } else {
-      gross -= e.amount * e.split_ratio;        // min andel
+      gross -= (e.amount * (1 - e.split_ratio)) / otherCount; // min andel av vad jag är skyldig
     }
   }
 

@@ -54,12 +54,15 @@ export type Expense = {
   is_recurring: boolean;
   recurring_id: string | null;
   reviewed: boolean;
+  currency?: string;        // default 'SEK' (satt av DB)
+  updated_at: string | null;
+  updated_by: string | null;
   created_at: string;
   category?: Category;
   payer?: Profile;
 };
 
-export type CreateExpenseInput = Omit<Expense, 'id' | 'created_at' | 'category' | 'payer'>;
+export type CreateExpenseInput = Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'updated_by' | 'category' | 'payer'>;
 
 // ─── Återkommande utgifter ───────────────────────────────────────────────────
 
