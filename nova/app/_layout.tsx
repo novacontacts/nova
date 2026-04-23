@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/store/auth';
 import { useHouseholdStore } from '@/lib/store/household';
 
-SplashScreen.preventAutoHideAsync();
+try { SplashScreen.preventAutoHideAsync(); } catch (_) {}
 
 const queryClient = new QueryClient();
 
@@ -54,8 +54,7 @@ function AuthGate() {
   useEffect(() => {
     if (!onboardingChecked || !initialized) return;
 
-    // Dölj splash screen när appen är klar att visa
-    SplashScreen.hideAsync();
+    try { SplashScreen.hideAsync(); } catch (_) {}
 
     const inOnboarding = segments[0] === 'onboarding';
     const inAuthGroup  = segments[0] === '(auth)';
