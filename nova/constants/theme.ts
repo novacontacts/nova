@@ -1,26 +1,26 @@
 export const colors = {
   // Backgrounds
-  bg: '#09090F',
-  surface: '#111119',
-  surfaceRaised: '#19191F',
+  bg: '#0A0A0F',
+  surface: '#13131A',
+  surfaceRaised: '#1C1C26',
 
   // Text
-  textPrimary: '#F7F7F8',
-  textSecondary: '#87879A',
-  textDisabled: '#3E3E52',
+  textPrimary: '#F5F5F7',
+  textSecondary: '#8E8E93',
+  textDisabled: '#48484A',
 
   // Accent
-  accentFrom: '#9333EA',
-  accentTo: '#7C3AED',
+  accentFrom: '#A855F7',
+  accentTo: '#EC4899',
 
   // Semantic
-  positive: '#22C55E',
-  negative: '#EF4444',
-  warning: '#F59E0B',
+  positive: '#34C759',
+  negative: '#FF453A',
+  warning: '#FF9F0A',
 
-  // Borders (subtle — used sparingly)
-  border: '#1D1D2A',
-  borderSubtle: '#141420',
+  // Borders
+  border: '#2C2C3A',
+  borderSubtle: '#1E1E2A',
 } as const;
 
 export const gradients = {

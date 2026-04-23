@@ -1,14 +1,32 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, Linking, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/lib/store/auth';
 import { useHouseholdStore } from '@/lib/store/household';
-import { useBalance, useCreateSettlement } from '@/hooks/useExpenses';
+import { useBalance, useCreateSettlement, useExpenses } from '@/hooks/useExpenses';
 import { colors, typography, spacing, radius } from '@/constants/theme';
 
-function AnimatedBalance({ value, color }: { value: number; color: string }) {
+function SettingsIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"
+        stroke={colors.textPrimary}
+        strokeWidth={1.5}
+      />
+      <Path
+        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+        stroke={colors.textPrimary}
+        strokeWidth={1.5}
+      />
+    </Svg>
+  );
+}
+
+function AnimatedBalance({ value }: { value: number }) {
   const animValue = useRef(new Animated.Value(0)).current;
   const [display, setDisplay] = useState(0);
 
@@ -20,10 +38,22 @@ function AnimatedBalance({ value, color }: { value: number; color: string }) {
   }, [value]);
 
   return (
-    <Text style={[styles.balanceAmount, { color }]}>
-      {display.toLocaleString('sv-SE', { maximumFractionDigits: 0 })} kr
-    </Text>
+    <View style={styles.balanceRow}>
+      <Text style={styles.balanceAmount}>
+        {display.toLocaleString('sv-SE', { maximumFractionDigits: 0 })}
+      </Text>
+      <Text style={styles.balanceUnit}>kr</Text>
+    </View>
   );
+}
+
+function todayLabel() {
+  const d = new Date();
+  const weekday = d.toLocaleDateString('sv-SE', { weekday: 'long' });
+  const day = d.getDate();
+  const month = d.toLocaleDateString('sv-SE', { month: 'long' });
+  const capitalized = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+  return `${capitalized}, ${day} ${month}`;
 }
 
 export default function DashboardScreen() {
@@ -32,6 +62,7 @@ export default function DashboardScreen() {
   const [copied, setCopied] = useState(false);
   const router = useRouter();
   const { net, partner: balancePartner } = useBalance();
+  const { data: expenses = [] } = useExpenses();
   const createSettlement = useCreateSettlement();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -40,15 +71,18 @@ export default function DashboardScreen() {
   }, []);
 
   const otherMembers = members.filter((m) => m.user_id !== profile?.id);
-  const greeting = profile?.display_name ? `Hej, ${profile.display_name}` : 'Hej!';
-  const balanceColor = net > 0 ? colors.positive : net < 0 ? colors.negative : colors.textPrimary;
-  const balanceLabel = net > 0
-    ? `${balancePartner?.display_name ?? 'Hushållet'} är skyldigt dig`
-    : net < 0
-    ? `Du är skyldig ${balancePartner?.display_name ?? 'hushållet'}`
-    : 'Ni är jämna';
+  const isOwing = net < 0;
   const absNet = Math.abs(net);
   const formattedNet = absNet.toLocaleString('sv-SE', { maximumFractionDigits: 0 });
+  const balanceLabel = isOwing
+    ? `Du är skyldig ${balancePartner?.display_name ?? 'hushållet'}`
+    : net > 0
+    ? `${balancePartner?.display_name ?? 'Hushållet'} är skyldigt dig`
+    : 'Ni är jämna';
+  const pct = Math.min(absNet / 5000, 1);
+  const barColor = isOwing ? colors.negative : colors.positive;
+
+  const recentExpenses = expenses.slice(0, 4);
 
   async function copyInviteCode() {
     if (!household?.invite_code) return;
@@ -68,7 +102,7 @@ export default function DashboardScreen() {
   }
 
   function confirmSettle() {
-    const actionText = net < 0
+    const actionText = isOwing
       ? `Du markerar att du betalat ${formattedNet} kr till ${balancePartner?.display_name ?? 'din sambo'}.`
       : `Du markerar att du mottagit ${formattedNet} kr från ${balancePartner?.display_name ?? 'din sambo'}.`;
     Alert.alert('Markera som betald', `${actionText}\n\nSaldot nollställs.`, [
@@ -79,7 +113,7 @@ export default function DashboardScreen() {
 
   function handleSettle() {
     if (!profile || !balancePartner || absNet < 1) return;
-    if (net < 0) {
+    if (isOwing) {
       Alert.alert(`Betala ${formattedNet} kr`, `till ${balancePartner.display_name ?? 'din sambo'}`, [
         { text: 'Avbryt', style: 'cancel' },
         {
@@ -96,6 +130,15 @@ export default function DashboardScreen() {
     }
   }
 
+  function formatAmount(amount: number) {
+    return amount.toLocaleString('sv-SE', { maximumFractionDigits: 0 }) + ' kr';
+  }
+
+  function formatDate(dateStr: string) {
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' });
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <Animated.ScrollView
@@ -106,37 +149,40 @@ export default function DashboardScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>{greeting}</Text>
-            {household && <Text style={styles.householdSub}>{household.name}</Text>}
+            <Text style={styles.dateLabel}>{todayLabel()}</Text>
+            <Text style={styles.greeting}>
+              {profile?.display_name ? `God dag, ${profile.display_name}` : 'God dag!'}
+            </Text>
           </View>
           <TouchableOpacity
             onPress={() => router.push('/settings')}
             style={styles.settingsBtn}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={styles.settingsIcon}>⚙️</Text>
+            <SettingsIcon />
           </TouchableOpacity>
         </View>
 
-        {/* Balance hero */}
-        <TouchableOpacity
-          style={styles.hero}
-          onPress={() => router.push('/add-expense')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.heroLabel}>
+        {/* Balance section */}
+        <View style={styles.balanceSection}>
+          <Text style={styles.balanceLabel}>
             {household ? balanceLabel : 'Ditt saldo'}
           </Text>
-          <AnimatedBalance
-            value={net}
-            color={household ? balanceColor : colors.textPrimary}
-          />
-          <Text style={styles.heroHint}>
+          <AnimatedBalance value={net} />
+
+          {/* Progress bar */}
+          {household && absNet > 0 && (
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${pct * 100}%` as any, backgroundColor: barColor }]} />
+            </View>
+          )}
+
+          <Text style={styles.balanceSub}>
             {household
-              ? 'Tryck för att lägga till utgift'
+              ? 'Sedan senaste avräkning'
               : 'Skapa ett hushåll för att spåra delat saldo'}
           </Text>
-        </TouchableOpacity>
+        </View>
 
         {/* Settle CTA */}
         {household && balancePartner && absNet >= 1 && (
@@ -147,67 +193,115 @@ export default function DashboardScreen() {
             activeOpacity={0.8}
           >
             <Text style={styles.settleBtnText}>
-              {net < 0
+              {isOwing
                 ? `Betala ${formattedNet} kr →`
-                : `Mottagit ${formattedNet} kr ✓`}
+                : `Markera ${formattedNet} kr som betald ✓`}
             </Text>
           </TouchableOpacity>
         )}
 
-        {/* Hushåll */}
-        {household ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Hushåll</Text>
-            <View style={styles.card}>
-              {otherMembers.length > 0 ? (
-                otherMembers.map((m, i) => (
-                  <View key={m.user_id}>
-                    {i > 0 && <View style={styles.divider} />}
-                    <View style={styles.memberRow}>
-                      <View style={styles.memberAvatar}>
-                        <Text style={styles.memberInitial}>
-                          {(m.profile?.display_name ?? m.profile?.email ?? '?')[0].toUpperCase()}
-                        </Text>
-                      </View>
-                      <View>
-                        <Text style={styles.memberName}>
-                          {m.profile?.display_name ?? m.profile?.email}
-                        </Text>
-                        <Text style={styles.memberSub}>Hushållsmedlem</Text>
-                      </View>
-                    </View>
-                  </View>
-                ))
-              ) : (
-                <View style={styles.inviteInner}>
-                  <Text style={styles.inviteLabel}>Bjud in din sambo</Text>
-                  <Text style={styles.inviteSub}>Dela den här koden:</Text>
-                  <TouchableOpacity style={styles.codeRow} onPress={copyInviteCode} activeOpacity={0.7}>
-                    <Text style={styles.code}>{household.invite_code}</Text>
-                    <Text style={styles.copyBtn}>{copied ? '✓ Kopierad' : 'Kopiera'}</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+        {/* Quick actions */}
+        {household && (
+          <View style={styles.quickGrid}>
+            <TouchableOpacity
+              style={styles.quickCard}
+              onPress={() => router.push('/add-expense')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.quickCardIcon}>+</Text>
+              <View>
+                <Text style={styles.quickCardTitle}>Ny utgift</Text>
+                <Text style={styles.quickCardSub}>Registrera ett köp</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickCard}
+              onPress={() => router.push('/(tabs)/swipe' as any)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.quickCardIcon}>⇄</Text>
+              <View>
+                <Text style={styles.quickCardTitle}>Sortera</Text>
+                <Text style={styles.quickCardSub}>Granska utgifter</Text>
+              </View>
+            </TouchableOpacity>
           </View>
-        ) : (
+        )}
+
+        {/* Recent expenses */}
+        {household && recentExpenses.length > 0 && (
           <View style={styles.section}>
-            <View style={styles.soloCard}>
-              <Text style={styles.soloIcon}>🏠</Text>
-              <Text style={styles.soloTitle}>Du kör solo just nu</Text>
-              <Text style={styles.soloText}>
-                Skapa ett hushåll och bjud in din sambo för att dela utgifter och hålla koll på saldot.
-              </Text>
-              <TouchableOpacity
-                style={styles.soloBtn}
-                onPress={() => router.replace('/(setup)')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.soloBtnText}>Sätt upp ett hushåll →</Text>
+            <View style={styles.sectionRow}>
+              <Text style={styles.sectionLabel}>Senaste</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/expenses' as any)}>
+                <Text style={styles.sectionLink}>Alla</Text>
               </TouchableOpacity>
+            </View>
+            <View style={styles.recentList}>
+              {recentExpenses.map((e, i) => {
+                const isPaidByMe = e.paid_by === profile?.id;
+                const myAmt = e.is_shared
+                  ? e.amount * (isPaidByMe ? e.split_ratio : 1 - e.split_ratio)
+                  : e.amount;
+                return (
+                  <View
+                    key={e.id}
+                    style={[
+                      styles.recentRow,
+                      i < recentExpenses.length - 1 && styles.recentRowBorder,
+                    ]}
+                  >
+                    <View style={[styles.recentIcon, { backgroundColor: (e.category?.color ?? colors.accentFrom) + '22' }]}>
+                      <Text style={styles.recentIconText}>{e.category?.icon ?? '📦'}</Text>
+                    </View>
+                    <View style={styles.recentMid}>
+                      <Text style={styles.recentTitle} numberOfLines={1}>
+                        {e.description || e.category?.name || 'Utgift'}
+                      </Text>
+                      <Text style={styles.recentMeta}>
+                        {e.is_shared ? 'Delad · ' : ''}{formatDate(e.date)}
+                      </Text>
+                    </View>
+                    <Text style={[styles.recentAmt, !isPaidByMe && { color: colors.textPrimary }]}>
+                      {isPaidByMe ? '+' : '−'}{formatAmount(e.is_shared ? myAmt : e.amount)}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
           </View>
         )}
+
+        {/* Hushåll — invite or member */}
+        {!household ? (
+          <View style={styles.soloCard}>
+            <Text style={styles.soloIcon}>🏠</Text>
+            <Text style={styles.soloTitle}>Du kör solo just nu</Text>
+            <Text style={styles.soloText}>
+              Skapa ett hushåll och bjud in din sambo för att dela utgifter och hålla koll på saldot.
+            </Text>
+            <TouchableOpacity
+              style={styles.soloBtn}
+              onPress={() => router.replace('/(setup)')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.soloBtnText}>Sätt upp ett hushåll →</Text>
+            </TouchableOpacity>
+          </View>
+        ) : otherMembers.length === 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Hushåll</Text>
+            <View style={styles.inviteCard}>
+              <Text style={styles.inviteLabel}>Bjud in din sambo</Text>
+              <Text style={styles.inviteSub}>Dela den här koden:</Text>
+              <TouchableOpacity style={styles.codeRow} onPress={copyInviteCode} activeOpacity={0.7}>
+                <Text style={styles.code}>{household.invite_code}</Text>
+                <Text style={styles.copyBtn}>{copied ? '✓ Kopierad' : 'Kopiera'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
       </Animated.ScrollView>
     </SafeAreaView>
   );
@@ -215,124 +309,218 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  scroll: { paddingBottom: spacing['4xl'] },
+  scroll: { paddingBottom: 100 },
 
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingHorizontal: spacing.base,
-    paddingTop: spacing.base,
-    paddingBottom: spacing.sm,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    marginBottom: 28,
   },
-  greeting: { fontSize: typography['2xl'], fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
-  householdSub: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },
-  settingsBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: colors.surface,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  settingsIcon: { fontSize: 18 },
-
-  hero: {
-    marginHorizontal: spacing.base,
-    marginTop: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius['2xl'],
-    paddingVertical: spacing['2xl'],
-    paddingHorizontal: spacing.base,
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  heroLabel: {
-    fontSize: typography.sm,
+  dateLabel: {
+    fontSize: 13,
     color: colors.textSecondary,
-    fontWeight: '500',
+    letterSpacing: 0.2,
   },
-  balanceAmount: {
-    fontSize: typography['5xl'],
+  greeting: {
+    fontSize: 30,
     fontWeight: '700',
     color: colors.textPrimary,
-    letterSpacing: -2,
-    lineHeight: 60,
+    letterSpacing: -0.8,
+    marginTop: 2,
   },
-  heroHint: {
-    fontSize: typography.xs,
+  settingsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+
+  balanceSection: {
+    paddingHorizontal: 20,
+    marginBottom: 18,
+  },
+  balanceLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  balanceAmount: {
+    fontSize: 64,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: -2.5,
+    lineHeight: 68,
+  },
+  balanceUnit: {
+    fontSize: 22,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  progressTrack: {
+    marginTop: 14,
+    height: 2,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: 1,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+  },
+  balanceSub: {
+    fontSize: 11,
     color: colors.textDisabled,
-    marginTop: spacing.xs,
+    marginTop: 8,
+    letterSpacing: 0.2,
   },
 
   settleBtn: {
-    marginHorizontal: spacing.base,
-    marginTop: spacing.sm,
-    backgroundColor: colors.positive + '18',
-    borderRadius: radius.full,
-    paddingVertical: spacing.md,
+    marginHorizontal: 20,
+    marginBottom: 24,
+    borderRadius: 12,
+    paddingVertical: 13,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.positive + '55',
   },
   settleBtnText: {
-    fontSize: typography.base,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '500',
     color: colors.positive,
   },
 
-  section: { marginTop: spacing.xl, paddingHorizontal: spacing.base, gap: spacing.sm },
-  sectionLabel: {
-    fontSize: typography.xs,
+  quickGrid: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 10,
+    marginBottom: 28,
+  },
+  quickCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 16,
+    gap: 18,
+    minHeight: 96,
+  },
+  quickCardIcon: {
+    fontSize: 20,
+    color: colors.accentFrom,
     fontWeight: '700',
-    color: colors.textDisabled,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+  },
+  quickCardTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textPrimary,
+  },
+  quickCardSub: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 
-  card: {
+  section: { paddingHorizontal: 20, marginBottom: 24 },
+  sectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  sectionLink: {
+    fontSize: 13,
+    color: colors.accentFrom,
+    fontWeight: '500',
+  },
+
+  recentList: {
     backgroundColor: colors.surface,
-    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
     overflow: 'hidden',
   },
-  divider: { height: 1, backgroundColor: colors.borderSubtle, marginLeft: 60 + spacing.base },
-
-  memberRow: {
+  recentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
+    padding: 14,
+    gap: 12,
   },
-  memberAvatar: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: colors.accentFrom + '25',
-    alignItems: 'center', justifyContent: 'center',
+  recentRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
   },
-  memberInitial: { fontSize: typography.lg, fontWeight: '700', color: colors.accentFrom },
-  memberName: { fontSize: typography.base, fontWeight: '600', color: colors.textPrimary },
-  memberSub: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 1 },
+  recentIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recentIconText: { fontSize: 16 },
+  recentMid: { flex: 1 },
+  recentTitle: { fontSize: 14, fontWeight: '500', color: colors.textPrimary },
+  recentMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  recentAmt: { fontSize: 14, fontWeight: '600', color: colors.positive },
 
-  inviteInner: { padding: spacing.base, gap: spacing.sm },
-  inviteLabel: { fontSize: typography.base, fontWeight: '600', color: colors.textPrimary },
-  inviteSub: { fontSize: typography.sm, color: colors.textSecondary },
-  codeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.xs },
-  code: { fontSize: typography.xl, fontWeight: '700', color: colors.accentFrom, letterSpacing: 2 },
-  copyBtn: { fontSize: typography.sm, color: colors.accentFrom, fontWeight: '500' },
+  inviteCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 16,
+    gap: 8,
+    marginTop: 10,
+  },
+  inviteLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  inviteSub: { fontSize: 13, color: colors.textSecondary },
+  codeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  code: { fontSize: 22, fontWeight: '700', color: colors.accentFrom, letterSpacing: 2 },
+  copyBtn: { fontSize: 13, color: colors.accentFrom, fontWeight: '500' },
 
   soloCard: {
+    marginHorizontal: 20,
+    marginTop: 8,
     backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    padding: 24,
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 8,
   },
   soloIcon: { fontSize: 40 },
   soloTitle: { fontSize: typography.lg, fontWeight: '700', color: colors.textPrimary },
-  soloText: { fontSize: typography.sm, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  soloText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   soloBtn: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.accentFrom + '20',
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
+    marginTop: 8,
+    borderRadius: 9999,
+    paddingHorizontal: 24,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: colors.accentFrom + '60',
+    backgroundColor: colors.accentFrom + '20',
   },
-  soloBtnText: { fontSize: typography.sm, fontWeight: '700', color: colors.accentFrom },
+  soloBtnText: { fontSize: 13, fontWeight: '700', color: colors.accentFrom },
 });

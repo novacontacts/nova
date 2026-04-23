@@ -251,10 +251,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   iconCircle: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 36, height: 36, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
-  icon: { fontSize: 20 },
+  icon: { fontSize: 16 },
   rowMid: { flex: 1, gap: 3 },
   rowTitle: { fontSize: typography.base, fontWeight: '500', color: colors.textPrimary },
   rowMeta: { flexDirection: 'row', alignItems: 'center' },
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
   separator: {
     height: 1,
     backgroundColor: colors.borderSubtle,
-    marginLeft: 44 + spacing.base + spacing.md,
+    marginLeft: 36 + spacing.base + spacing.md,
   },
 
   deleteAction: {
