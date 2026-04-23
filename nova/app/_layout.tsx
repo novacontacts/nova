@@ -4,10 +4,13 @@ import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SplashScreen from 'expo-splash-screen';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/store/auth';
 import { useHouseholdStore } from '@/lib/store/household';
+
+SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
@@ -50,6 +53,9 @@ function AuthGate() {
 
   useEffect(() => {
     if (!onboardingChecked || !initialized) return;
+
+    // Dölj splash screen när appen är klar att visa
+    SplashScreen.hideAsync();
 
     const inOnboarding = segments[0] === 'onboarding';
     const inAuthGroup  = segments[0] === '(auth)';

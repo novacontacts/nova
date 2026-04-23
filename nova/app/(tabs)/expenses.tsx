@@ -1,8 +1,10 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuthStore } from '@/lib/store/auth';
+import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { Expense } from '@/types';
 import { colors, typography, spacing, radius } from '@/constants/theme';
 
@@ -54,32 +56,42 @@ function ExpenseRow({ expense, myId }: { expense: Expense; myId: string }) {
 export default function ExpensesScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { data: expenses = [], isLoading } = useExpenses();
+  const { data: expenses = [], isLoading, isError, refetch } = useExpenses();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }).start();
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Text style={styles.heading}>Utgifter</Text>
-      </View>
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        <View style={styles.header}>
+          <Text style={styles.heading}>Utgifter</Text>
+        </View>
 
-      <FlatList
-        data={expenses}
-        keyExtractor={(e) => e.id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          !isLoading ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>🧾</Text>
-              <Text style={styles.emptyTitle}>Inga utgifter än</Text>
-              <Text style={styles.emptySub}>Tryck på + för att lägga till din första utgift</Text>
-            </View>
-          ) : null
-        }
-        renderItem={({ item }) => <ExpenseRow expense={item} myId={user?.id ?? ''} />}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-      />
+        {isError ? (
+          <ErrorMessage message="Kunde inte hämta utgifter." onRetry={refetch} />
+        ) : (
+          <FlatList
+            data={expenses}
+            keyExtractor={(e) => e.id}
+            contentContainerStyle={styles.list}
+            ListEmptyComponent={
+              !isLoading ? (
+                <View style={styles.empty}>
+                  <Text style={styles.emptyIcon}>🧾</Text>
+                  <Text style={styles.emptyTitle}>Inga utgifter än</Text>
+                  <Text style={styles.emptySub}>Tryck på + för att lägga till din första utgift</Text>
+                </View>
+              ) : null
+            }
+            renderItem={({ item }) => <ExpenseRow expense={item} myId={user?.id ?? ''} />}
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
+          />
+        )}
+      </Animated.View>
 
-      {/* FAB */}
       <TouchableOpacity style={styles.fab} onPress={() => router.push('/add-expense')} activeOpacity={0.85}>
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
@@ -91,42 +103,29 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   header: { paddingHorizontal: spacing.base, paddingTop: spacing.base, paddingBottom: spacing.sm },
   heading: { fontSize: typography['2xl'], fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
-
   list: { paddingHorizontal: spacing.base, paddingBottom: 100 },
-
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, gap: spacing.md },
-  iconWrap: {
-    width: 44, height: 44, borderRadius: radius.md,
-    backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center',
-  },
+  iconWrap: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   icon: { fontSize: 22 },
   rowMid: { flex: 1, gap: 3 },
   rowTitle: { fontSize: typography.base, fontWeight: '500', color: colors.textPrimary },
   rowMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  sharedBadge: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.sm,
-    paddingHorizontal: 6, paddingVertical: 2,
-  },
+  sharedBadge: { backgroundColor: colors.surfaceRaised, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
   sharedText: { fontSize: typography.xs, color: colors.accentFrom, fontWeight: '600' },
   rowDate: { fontSize: typography.sm, color: colors.textSecondary },
   rowRight: { alignItems: 'flex-end', gap: 2 },
   rowAmount: { fontSize: typography.base, fontWeight: '600', color: colors.positive },
   rowAmountOwed: { color: colors.negative },
   rowTotal: { fontSize: typography.xs, color: colors.textDisabled },
-
   separator: { height: 1, backgroundColor: colors.borderSubtle },
-
   empty: { alignItems: 'center', paddingTop: 80, gap: spacing.md },
   emptyIcon: { fontSize: 48 },
   emptyTitle: { fontSize: typography.lg, fontWeight: '600', color: colors.textPrimary },
   emptySub: { fontSize: typography.base, color: colors.textSecondary, textAlign: 'center' },
-
   fab: {
     position: 'absolute', bottom: 24, right: 24,
     width: 56, height: 56, borderRadius: 28,
-    backgroundColor: colors.accentFrom,
-    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.accentFrom, alignItems: 'center', justifyContent: 'center',
     shadowColor: colors.accentFrom, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
   },

@@ -14,7 +14,7 @@ export type StatsFilter = 'all' | 'private' | 'shared';
 
 export function useStats(year: number, month: number, filter: StatsFilter = 'all') {
   const { user } = useAuthStore();
-  const { data: expenses = [] } = useExpenses();
+  const { data: expenses = [], isError, refetch } = useExpenses();
 
   return useMemo(() => {
     const monthExpenses = expenses.filter((e) => {
@@ -53,6 +53,6 @@ export function useStats(year: number, month: number, filter: StatsFilter = 'all
       .sort((a, b) => b.total - a.total)
       .map((s) => ({ ...s, pct: total > 0 ? s.total / total : 0 }));
 
-    return { total, byCategory, count: monthExpenses.length };
-  }, [expenses, year, month, filter, user?.id]);
+    return { total, byCategory, count: monthExpenses.length, isError, refetch };
+  }, [expenses, year, month, filter, user?.id, isError, refetch]);
 }
