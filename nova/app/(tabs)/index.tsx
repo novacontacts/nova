@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
@@ -8,6 +8,29 @@ import { useHouseholdStore } from '@/lib/store/household';
 import { useBalance, useCreateSettlement } from '@/hooks/useExpenses';
 import { colors, typography, spacing, radius } from '@/constants/theme';
 
+function AnimatedBalance({ value, color }: { value: number; color: string }) {
+  const animValue = useRef(new Animated.Value(0)).current;
+  const [display, setDisplay] = useState(0);
+
+  useEffect(() => {
+    animValue.setValue(0);
+    Animated.timing(animValue, {
+      toValue: Math.abs(value),
+      duration: 700,
+      useNativeDriver: false,
+    }).start();
+
+    const id = animValue.addListener(({ value: v }) => setDisplay(Math.round(v)));
+    return () => animValue.removeListener(id);
+  }, [value]);
+
+  return (
+    <Text style={[styles.balanceAmount, { color }]}>
+      {display.toLocaleString('sv-SE', { maximumFractionDigits: 0 })} kr
+    </Text>
+  );
+}
+
 export default function DashboardScreen() {
   const { profile, signOut } = useAuthStore();
   const { household, members } = useHouseholdStore();
@@ -15,6 +38,15 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { net, partner: balancePartner } = useBalance();
   const createSettlement = useCreateSettlement();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+  }, []);
 
   const partner = members.find((m) => m.user_id !== profile?.id);
   const greeting = profile?.display_name ? `Hej, ${profile.display_name}` : 'Hej!';
@@ -66,7 +98,7 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
+      <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
 
         {/* Header */}
         <View style={styles.header}>
@@ -85,15 +117,13 @@ export default function DashboardScreen() {
         {/* Saldo-kort */}
         <TouchableOpacity style={styles.balanceCard} onPress={() => router.push('/add-expense')} activeOpacity={0.85}>
           <Text style={styles.balanceLabel}>{household ? balanceLabel : 'Ditt saldo'}</Text>
-          <Text style={[styles.balanceAmount, household && { color: balanceColor }]}>
-            {formattedNet} kr
-          </Text>
+          <AnimatedBalance value={net} color={household ? balanceColor : colors.textPrimary} />
           <Text style={styles.balanceNote}>
             {household ? 'Tryck för att lägga till utgift' : 'Skapa ett hushåll för att spåra delat saldo'}
           </Text>
         </TouchableOpacity>
 
-        {/* Markera som betald — syns bara när det finns ett saldo och en partner */}
+        {/* Markera som betald */}
         {household && balancePartner && absNet >= 1 && (
           <TouchableOpacity
             style={[styles.settleBtn, createSettlement.isPending && styles.settleBtnDisabled]}
@@ -138,7 +168,7 @@ export default function DashboardScreen() {
           </View>
         )}
 
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }

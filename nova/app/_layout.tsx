@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/store/auth';
@@ -15,6 +16,15 @@ function AuthGate() {
   const segments = useSegments();
   const { session, initialized, setSession, fetchProfile } = useAuthStore();
   const { household, fetchHousehold, reset } = useHouseholdStore();
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [onboardingDone, setOnboardingDone] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem('onboarding_completed').then((val) => {
+      setOnboardingDone(val === 'true');
+      setOnboardingChecked(true);
+    });
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -39,18 +49,22 @@ function AuthGate() {
   }, []);
 
   useEffect(() => {
-    if (!initialized) return;
+    if (!onboardingChecked || !initialized) return;
 
+    const inOnboarding = segments[0] === 'onboarding';
     const inAuthGroup  = segments[0] === '(auth)';
     const inSetupGroup = segments[0] === '(setup)';
-    const inTabsGroup  = segments[0] === '(tabs)';
+
+    if (!onboardingDone) {
+      if (!inOnboarding) router.replace('/onboarding');
+      return;
+    }
 
     if (!session) {
       if (!inAuthGroup) router.replace('/(auth)/login');
       return;
     }
 
-    // Inloggad men hushållsstatus inte laddad ännu – vänta
     if (household === undefined) return;
 
     if (!household && !inSetupGroup) {
@@ -60,7 +74,7 @@ function AuthGate() {
     } else if (inAuthGroup) {
       router.replace('/(setup)');
     }
-  }, [session, initialized, household, segments]);
+  }, [session, initialized, household, segments, onboardingChecked, onboardingDone]);
 
   return null;
 }
@@ -72,6 +86,7 @@ export default function RootLayout() {
         <StatusBar style="light" />
         <AuthGate />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+          <Stack.Screen name="onboarding" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(setup)" />
           <Stack.Screen name="(tabs)" />
