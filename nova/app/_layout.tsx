@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/lib/store/auth';
 import { useHouseholdStore } from '@/lib/store/household';
 import { useLocalAuth } from '@/hooks/useLocalAuth';
+import { usePushToken } from '@/hooks/usePushToken';
 
 try { SplashScreen.preventAutoHideAsync(); } catch (_) {}
 
@@ -22,6 +23,7 @@ function AuthGate() {
   const { session, initialized, setSession, fetchProfile, signOut } = useAuthStore();
   const { household, fetchHousehold, reset } = useHouseholdStore();
   const { authenticate, isEnabled } = useLocalAuth();
+  usePushToken(session?.user?.id ?? null);
   const appStateRef = useRef(AppState.currentState);
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(false);
@@ -34,7 +36,12 @@ function AuthGate() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        supabase.auth.signOut();
+        setSession(null);
+        return;
+      }
       setSession(session);
       if (session?.user) {
         fetchProfile(session.user.id);
@@ -116,6 +123,8 @@ export default function RootLayout() {
           <Stack.Screen name="add-category" options={{ presentation: 'modal' }} />
           <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
           <Stack.Screen name="import-csv" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="settle" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="settlements" options={{ presentation: 'modal' }} />
         </Stack>
       </QueryClientProvider>
     </GestureHandlerRootView>

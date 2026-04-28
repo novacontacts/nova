@@ -64,24 +64,24 @@ export function SwipeCard({ expense, index, onSwipe }: Props) {
   });
 
   const leftOpacity = position.x.interpolate({
-    inputRange: [-80, 0],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
+    inputRange: [-80, 0], outputRange: [1, 0], extrapolate: 'clamp',
   });
   const leftScale = position.x.interpolate({
-    inputRange: [-100, 0],
-    outputRange: [1, 0.8],
-    extrapolate: 'clamp',
+    inputRange: [-100, 0], outputRange: [1, 0.85], extrapolate: 'clamp',
   });
   const rightOpacity = position.x.interpolate({
-    inputRange: [0, 80],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
+    inputRange: [0, 80], outputRange: [0, 1], extrapolate: 'clamp',
   });
   const rightScale = position.x.interpolate({
-    inputRange: [0, 100],
-    outputRange: [0.8, 1],
-    extrapolate: 'clamp',
+    inputRange: [0, 100], outputRange: [0.85, 1], extrapolate: 'clamp',
+  });
+
+  // Subtle background tint as you drag
+  const bgOpacity = position.x.interpolate({
+    inputRange: [-200, 0, 200], outputRange: [0.18, 0, 0.18], extrapolate: 'clamp',
+  });
+  const bgColorChoice = position.x.interpolate({
+    inputRange: [-1, 0, 1], outputRange: [0, 0, 1] as any, extrapolate: 'clamp',
   });
 
   const dynamicCardStyle = isTop
@@ -94,7 +94,27 @@ export function SwipeCard({ expense, index, onSwipe }: Props) {
       pointerEvents={isTop ? 'auto' : 'none'}
       {...(isTop ? panResponder.panHandlers : {})}
     >
-      {/* PRIVAT-stämpel */}
+      {/* Bakgrundsfärg som tonas in vid swipe */}
+      {isTop && (
+        <>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: colors.negative, borderRadius: radius.xl, opacity: leftOpacity.interpolate({ inputRange: [0, 1], outputRange: [0, 0.12] }) },
+            ]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: colors.positive, borderRadius: radius.xl, opacity: rightOpacity.interpolate({ inputRange: [0, 1], outputRange: [0, 0.12] }) },
+            ]}
+          />
+        </>
+      )}
+
+      {/* PRIVAT-stämpel — större, ikonbaserad */}
       <Animated.View
         style={[
           styles.stamp,
@@ -102,6 +122,7 @@ export function SwipeCard({ expense, index, onSwipe }: Props) {
           { opacity: leftOpacity, transform: [{ rotate: '-12deg' }, { scale: leftScale }] },
         ]}
       >
+        <Text style={styles.stampIcon}>🔒</Text>
         <Text style={[styles.stampText, { color: colors.negative }]}>PRIVAT</Text>
       </Animated.View>
 
@@ -113,6 +134,7 @@ export function SwipeCard({ expense, index, onSwipe }: Props) {
           { opacity: rightOpacity, transform: [{ rotate: '12deg' }, { scale: rightScale }] },
         ]}
       >
+        <Text style={styles.stampIcon}>🤝</Text>
         <Text style={[styles.stampText, { color: colors.positive }]}>DELAD</Text>
       </Animated.View>
 
@@ -132,12 +154,19 @@ export function SwipeCard({ expense, index, onSwipe }: Props) {
 
       <View style={styles.hints}>
         <View style={styles.hintItem}>
-          <Text style={styles.hintArrow}>←</Text>
-          <Text style={[styles.hintText, { color: colors.negative }]}>Privat</Text>
+          <Text style={[styles.hintIcon, { color: colors.negative }]}>🔒</Text>
+          <View>
+            <Text style={[styles.hintLabel, { color: colors.negative }]}>← Privat</Text>
+            <Text style={styles.hintSub}>Bara för dig</Text>
+          </View>
         </View>
+        <View style={styles.hintDivider} />
         <View style={[styles.hintItem, { flexDirection: 'row-reverse' }]}>
-          <Text style={styles.hintArrow}>→</Text>
-          <Text style={[styles.hintText, { color: colors.positive }]}>Delad</Text>
+          <Text style={[styles.hintIcon, { color: colors.positive }]}>🤝</Text>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={[styles.hintLabel, { color: colors.positive }]}>Delad →</Text>
+            <Text style={styles.hintSub}>Splittas med sambo</Text>
+          </View>
         </View>
       </View>
     </Animated.View>
@@ -155,6 +184,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: 'center',
     gap: spacing.md,
+    overflow: 'hidden',
     ...shadows.card,
   },
 
@@ -162,23 +192,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing.lg,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
-    borderWidth: 2.5,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface + 'CC',
+    zIndex: 5,
   },
-  stampLeft: {
-    left: spacing.lg,
-    borderColor: colors.negative,
-  },
-  stampRight: {
-    right: spacing.lg,
-    borderColor: colors.positive,
-  },
-  stampText: {
-    fontSize: typography.md,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-  },
+  stampLeft: { left: spacing.lg, borderColor: colors.negative },
+  stampRight: { right: spacing.lg, borderColor: colors.positive },
+  stampIcon: { fontSize: 18 },
+  stampText: { fontSize: typography.lg, fontWeight: '900', letterSpacing: 2 },
 
   categoryBadge: {
     flexDirection: 'row',
@@ -213,13 +239,16 @@ const styles = StyleSheet.create({
   hints: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     width: '100%',
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.borderSubtle,
   },
-  hintItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  hintArrow: { fontSize: typography.lg, color: colors.textDisabled },
-  hintText: { fontSize: typography.sm, fontWeight: '600' },
+  hintItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  hintDivider: { width: 1, height: 28, backgroundColor: colors.borderSubtle },
+  hintIcon: { fontSize: 18 },
+  hintLabel: { fontSize: typography.sm, fontWeight: '700' },
+  hintSub: { fontSize: 10, color: colors.textDisabled, marginTop: 1 },
 });

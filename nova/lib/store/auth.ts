@@ -9,6 +9,7 @@ type AuthStore = {
   profile: Profile | null;
   initialized: boolean;
   setSession: (session: Session | null) => void;
+  setProfile: (profile: Profile) => void;
   fetchProfile: (userId: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -22,6 +23,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
   setSession: (session) => {
     set({ session, user: session?.user ?? null, initialized: true });
   },
+
+  setProfile: (profile) => set({ profile }),
 
   fetchProfile: async (userId) => {
     const { data } = await supabase

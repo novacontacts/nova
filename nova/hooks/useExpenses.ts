@@ -4,6 +4,18 @@ import { useAuthStore } from '@/lib/store/auth';
 import { useHouseholdStore } from '@/lib/store/household';
 import { Expense, CreateExpenseInput, Settlement } from '@/types';
 
+async function sendPush(householdId: string, excludeUserId: string, title: string, body: string) {
+  try {
+    console.log('[sendPush] anropar Edge Function', { householdId, excludeUserId, title });
+    const { data, error } = await supabase.functions.invoke('send-push', {
+      body: { household_id: householdId, excluded_user_id: excludeUserId, title, body },
+    });
+    console.log('[sendPush] svar:', data, 'fel:', error);
+  } catch (e) {
+    console.log('[sendPush] exception:', e);
+  }
+}
+
 export function useExpenses() {
   const { user } = useAuthStore();
   const { household } = useHouseholdStore();
@@ -25,7 +37,7 @@ export function useExpenses() {
 
 export function useAddExpense() {
   const queryClient = useQueryClient();
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
   const { household } = useHouseholdStore();
 
   return useMutation({
@@ -43,8 +55,14 @@ export function useAddExpense() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      if (data.is_shared && household?.id && user?.id) {
+        const name = profile?.display_name ?? 'Din sambo';
+        const desc = data.description || 'en utgift';
+        const amt = Number(data.amount).toLocaleString('sv-SE', { maximumFractionDigits: 0 });
+        sendPush(household.id, user.id, `${name} lade till en utgift`, `${desc} – ${amt} kr`);
+      }
     },
   });
 }
@@ -81,6 +99,7 @@ export function useDeleteExpense() {
 
 export function useUpdateExpense() {
   const queryClient = useQueryClient();
+  const { user, profile } = useAuthStore();
   const { household } = useHouseholdStore();
 
   return useMutation({
@@ -90,9 +109,15 @@ export function useUpdateExpense() {
         .update(updates)
         .eq('id', id);
       if (error) throw error;
+      return { id, updates };
     },
-    onSuccess: () => {
+    onSuccess: ({ updates }) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      if (updates.is_shared !== false && household?.id && user?.id) {
+        const name = profile?.display_name ?? 'Din sambo';
+        const desc = updates.description || 'en utgift';
+        sendPush(household.id, user.id, `${name} uppdaterade en utgift`, desc);
+      }
     },
   });
 }
@@ -117,7 +142,7 @@ function useSettlements() {
 
 export function useCreateSettlement() {
   const queryClient = useQueryClient();
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
   const { household } = useHouseholdStore();
 
   return useMutation({
@@ -129,10 +154,16 @@ export function useCreateSettlement() {
         amount,
       });
       if (error) throw error;
+      return { amount };
     },
-    onSuccess: () => {
+    onSuccess: ({ amount }) => {
       queryClient.invalidateQueries({ queryKey: ['settlements'] });
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      if (household?.id && user?.id) {
+        const name = profile?.display_name ?? 'Din sambo';
+        const amt = amount.toLocaleString('sv-SE', { maximumFractionDigits: 0 });
+        sendPush(household.id, user.id, `${name} betalade ${amt} kr`, 'Avräkningen är uppdaterad.');
+      }
     },
   });
 }

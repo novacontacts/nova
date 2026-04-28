@@ -80,6 +80,7 @@ CREATE TABLE expenses (
   recurring_id UUID,
   reviewed     BOOLEAN DEFAULT FALSE,
   currency     TEXT    DEFAULT 'SEK',
+  source_hash  TEXT,
   updated_at   TIMESTAMPTZ,
   updated_by   UUID REFERENCES profiles(id),
   created_at   TIMESTAMPTZ DEFAULT NOW()
@@ -207,10 +208,60 @@ BEGIN
 END;
 $$;
 
--- ─── Fas 4 – Migrationer (kör om databasen redan finns) ──────
+-- ─── Gemensamma sparmål ──────────────────────────────────────
+CREATE TABLE savings_goals (
+  id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  household_id   UUID REFERENCES households(id) ON DELETE CASCADE NOT NULL,
+  title          TEXT NOT NULL,
+  emoji          TEXT NOT NULL DEFAULT '🎯',
+  target_amount  DECIMAL(10,2) NOT NULL CHECK (target_amount > 0),
+  current_amount DECIMAL(10,2) NOT NULL DEFAULT 0 CHECK (current_amount >= 0),
+  deadline       DATE,
+  created_by     UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE savings_goals ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Sparmål: se i hushåll" ON savings_goals FOR SELECT
+  USING (household_id IN (SELECT household_id FROM household_members WHERE user_id = auth.uid()));
+CREATE POLICY "Sparmål: skapa" ON savings_goals FOR INSERT
+  WITH CHECK (
+    household_id IN (SELECT household_id FROM household_members WHERE user_id = auth.uid())
+    AND created_by = auth.uid()
+  );
+CREATE POLICY "Sparmål: uppdatera" ON savings_goals FOR UPDATE
+  USING (household_id IN (SELECT household_id FROM household_members WHERE user_id = auth.uid()));
+CREATE POLICY "Sparmål: ta bort" ON savings_goals FOR DELETE
+  USING (household_id IN (SELECT household_id FROM household_members WHERE user_id = auth.uid()));
+
+-- ─── Återkommande utgifter ───────────────────────────────────
+CREATE TABLE recurring_expenses (
+  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  household_id UUID REFERENCES households(id) ON DELETE CASCADE NOT NULL,
+  title        TEXT NOT NULL,
+  amount       DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+  category_id  UUID REFERENCES categories(id) ON DELETE SET NULL,
+  day_of_month INTEGER NOT NULL DEFAULT 1 CHECK (day_of_month >= 1 AND day_of_month <= 31),
+  created_by   UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  is_active    BOOLEAN DEFAULT TRUE,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE recurring_expenses ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Återkommande: se i hushåll" ON recurring_expenses FOR SELECT
+  USING (household_id IN (SELECT household_id FROM household_members WHERE user_id = auth.uid()));
+CREATE POLICY "Återkommande: skapa" ON recurring_expenses FOR INSERT
+  WITH CHECK (household_id IN (SELECT household_id FROM household_members WHERE user_id = auth.uid()) AND created_by = auth.uid());
+CREATE POLICY "Återkommande: uppdatera" ON recurring_expenses FOR UPDATE
+  USING (household_id IN (SELECT household_id FROM household_members WHERE user_id = auth.uid()));
+
+-- ─── Migrationer (kör om databasen redan finns) ──────────────
+-- ALTER TABLE profiles ADD COLUMN IF NOT EXISTS push_token TEXT;
+-- ALTER TABLE profiles ADD COLUMN IF NOT EXISTS swish_phone TEXT;
 -- ALTER TABLE expenses
 --   ADD COLUMN IF NOT EXISTS reviewed    BOOLEAN DEFAULT FALSE,
 --   ADD COLUMN IF NOT EXISTS currency    TEXT    DEFAULT 'SEK',
+--   ADD COLUMN IF NOT EXISTS source_hash TEXT,
 --   ADD COLUMN IF NOT EXISTS updated_at  TIMESTAMPTZ,
 --   ADD COLUMN IF NOT EXISTS updated_by  UUID REFERENCES profiles(id);
 -- UPDATE expenses SET reviewed = TRUE WHERE reviewed IS NULL;

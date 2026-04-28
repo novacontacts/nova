@@ -14,7 +14,12 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.nova.app"
+      "bundleIdentifier": "com.nova.app",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": [
+          "swish"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,8 +33,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "@react-native-community/datetimepicker"
     ],
-    "scheme": "nova"
+    "scheme": "nova",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5aedd0c4-b4a0-43eb-aac5-ef16bd3eb5a1"
+      }
+    },
+    "owner": "nova1221"
   }
 }

@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, SectionList, TouchableOpacity,
-  Animated, Alert,
+  Animated, Alert, TextInput, RefreshControl,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,6 +13,8 @@ import { Toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 import { Expense } from '@/types';
 import { colors, typography, spacing, radius } from '@/constants/theme';
+
+type Filter = 'all' | 'shared' | 'private';
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -120,11 +122,14 @@ function SwipeableRow({
 export default function ExpensesScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { data: expenses = [], isLoading, isError, refetch } = useExpenses();
+  const { data: expenses = [], isLoading, isError, refetch, isRefetching } = useExpenses();
   const deleteExpense = useDeleteExpense();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [toastMsg, setToastMsg] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }).start();
@@ -146,19 +151,117 @@ export default function ExpensesScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [user?.id]);
 
-  const sections = groupByMonth(expenses);
+  // Filter + search
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return expenses.filter((e) => {
+      if (filter === 'shared' && !e.is_shared) return false;
+      if (filter === 'private' && e.is_shared) return false;
+      if (q) {
+        const hay = `${e.description ?? ''} ${e.category?.name ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [expenses, filter, search]);
+
+  // Summary för innevarande månad
+  const summary = useMemo(() => {
+    if (!user) return { total: 0, shared: 0, privateAmt: 0, count: 0 };
+    const now = new Date();
+    const month = expenses.filter((e) => {
+      const d = new Date(e.date + 'T00:00:00');
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    });
+    let total = 0, shared = 0, privateAmt = 0;
+    for (const e of month) {
+      const isMine = e.paid_by === user.id;
+      if (e.is_shared) {
+        const my = e.amount * (isMine ? e.split_ratio : 1 - e.split_ratio);
+        total += my; shared += my;
+      } else if (isMine) {
+        total += e.amount; privateAmt += e.amount;
+      }
+    }
+    return { total, shared, privateAmt, count: month.length };
+  }, [expenses, user?.id]);
+
+  const sections = groupByMonth(filtered);
 
   return (
     <SafeAreaView style={styles.safe}>
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
         <View style={styles.header}>
           <Text style={styles.heading}>Utgifter</Text>
-          <TouchableOpacity
-            onPress={() => router.push('/import-csv')}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.importLink}>Importera</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={() => { setShowSearch((s) => !s); if (showSearch) setSearch(''); }}
+              style={styles.headerIconBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.headerIcon}>{showSearch ? '✕' : '🔍'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push('/import-csv')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.importLink}>Importera</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Sökruta */}
+        {showSearch && (
+          <View style={styles.searchWrap}>
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Sök beskrivning eller kategori"
+              placeholderTextColor={colors.textDisabled}
+              style={styles.searchInput}
+              autoFocus
+              returnKeyType="search"
+              selectionColor={colors.accentFrom}
+            />
+          </View>
+        )}
+
+        {/* Summary-strip */}
+        {!showSearch && summary.count > 0 && (
+          <View style={styles.summary}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Denna månad</Text>
+              <Text style={styles.summaryValue}>{formatAmount(summary.total)}</Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Delat</Text>
+              <Text style={[styles.summaryValue, { color: colors.accentFrom }]}>
+                {formatAmount(summary.shared)}
+              </Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Privat</Text>
+              <Text style={styles.summaryValue}>{formatAmount(summary.privateAmt)}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Filter chips */}
+        <View style={styles.filterRow}>
+          {(['all', 'shared', 'private'] as Filter[]).map((f) => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.filterChip, filter === f && styles.filterChipActive]}
+              onPress={() => setFilter(f)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}>
+                {f === 'all' ? 'Alla' : f === 'shared' ? 'Delat' : 'Privat'}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {isError ? (
@@ -169,6 +272,13 @@ export default function ExpensesScreen() {
             keyExtractor={(e) => e.id}
             contentContainerStyle={styles.list}
             stickySectionHeadersEnabled
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefetching}
+                onRefresh={refetch}
+                tintColor={colors.textSecondary}
+              />
+            }
             renderSectionHeader={({ section }) => (
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -177,10 +287,13 @@ export default function ExpensesScreen() {
             ListEmptyComponent={
               !isLoading ? (
                 <View style={styles.empty}>
-                  <Text style={styles.emptyIcon}>🧾</Text>
-                  <Text style={styles.emptyTitle}>Inga utgifter än</Text>
+                  <Text style={styles.emptyIcon}>{search ? '🔍' : '🧾'}</Text>
+                  <Text style={styles.emptyTitle}>
+                    {search ? 'Inga träffar' : filter === 'shared' ? 'Inga delade utgifter' :
+                      filter === 'private' ? 'Inga privata utgifter' : 'Inga utgifter än'}
+                  </Text>
                   <Text style={styles.emptySub}>
-                    Tryck på + för att lägga till din första utgift
+                    {search ? `Inget matchade "${search}"` : 'Tryck på + för att lägga till din första utgift'}
                   </Text>
                 </View>
               ) : null
@@ -223,8 +336,42 @@ const styles = StyleSheet.create({
     paddingTop: spacing.base,
     paddingBottom: spacing.sm,
   },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.base },
   heading: { fontSize: typography['2xl'], fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.5 },
   importLink: { fontSize: typography.sm, fontWeight: '600', color: colors.accentFrom },
+  headerIconBtn: { padding: 4 },
+  headerIcon: { fontSize: 18 },
+
+  searchWrap: { paddingHorizontal: spacing.base, paddingBottom: spacing.sm },
+  searchInput: {
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, height: 44,
+    fontSize: typography.base, color: colors.textPrimary,
+  },
+
+  summary: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+  },
+  summaryItem: { flex: 1, alignItems: 'center', gap: 2 },
+  summaryDivider: { width: 1, backgroundColor: colors.borderSubtle, marginVertical: 4 },
+  summaryLabel: { fontSize: 10, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '600' },
+  summaryValue: { fontSize: typography.md, fontWeight: '700', color: colors.textPrimary, letterSpacing: -0.3 },
+
+  filterRow: { flexDirection: 'row', paddingHorizontal: spacing.base, gap: spacing.xs, marginBottom: spacing.sm },
+  filterChip: {
+    paddingHorizontal: spacing.base, paddingVertical: spacing.xs,
+    borderRadius: radius.full, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  filterChipActive: { backgroundColor: colors.surfaceRaised, borderColor: colors.accentFrom },
+  filterChipText: { fontSize: typography.sm, color: colors.textSecondary, fontWeight: '500' },
+  filterChipTextActive: { color: colors.accentFrom, fontWeight: '600' },
 
   sectionHeader: {
     backgroundColor: colors.bg,

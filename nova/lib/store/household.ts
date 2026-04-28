@@ -11,6 +11,7 @@ type HouseholdStore = {
   fetchHousehold: (userId: string) => Promise<void>;
   createHousehold: (name: string, userId: string) => Promise<string | null>;
   joinHousehold: (inviteCode: string, userId: string) => Promise<string | null>;
+  setHousehold: (household: Household) => void;
   reset: () => void;
 };
 
@@ -40,7 +41,7 @@ export const useHouseholdStore = create<HouseholdStore>((set) => ({
 
     const { data: members } = await supabase
       .from('household_members')
-      .select('user_id, joined_at, profile:profiles(id, email, display_name, avatar_url, created_at)')
+      .select('user_id, joined_at, profile:profiles(id, email, display_name, avatar_url, swish_phone, created_at)')
       .eq('household_id', data.household_id);
 
     set({
@@ -83,5 +84,6 @@ export const useHouseholdStore = create<HouseholdStore>((set) => ({
     return null;
   },
 
+  setHousehold: (household) => set({ household }),
   reset: () => set({ household: null, members: [] }),
 }));

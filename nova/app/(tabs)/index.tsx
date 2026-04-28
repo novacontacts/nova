@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, RefreshControl, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/lib/store/auth';
 import { useHouseholdStore } from '@/lib/store/household';
 import { useBalance, useCreateSettlement, useExpenses } from '@/hooks/useExpenses';
 import { colors, typography, spacing, radius } from '@/constants/theme';
+
+const SWISH_PINK = '#EE2A7B';
 
 function SettingsIcon() {
   return (
@@ -22,6 +25,27 @@ function SettingsIcon() {
         stroke={colors.textPrimary}
         strokeWidth={1.5}
       />
+    </Svg>
+  );
+}
+
+function SwishGlyph({ size = 18, color = 'white' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M5 9c1.5-3.5 5-5 8-4s5 4 4 7-4 5-7 4M19 15c-1.5 3.5-5 5-8 4s-5-4-4-7 4-5 7-4"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+function CheckIcon({ size = 16, color = colors.positive }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M4 12l5 5 11-11" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -57,14 +81,52 @@ function todayLabel() {
 }
 
 export default function DashboardScreen() {
-  const { profile, signOut } = useAuthStore();
+  const { profile } = useAuthStore();
   const { household, members } = useHouseholdStore();
   const [copied, setCopied] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
+  const qc = useQueryClient();
   const { net, partner: balancePartner } = useBalance();
   const { data: expenses = [] } = useExpenses();
   const createSettlement = useCreateSettlement();
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const partnerMember = members.find((m) => m.user_id !== profile?.id);
+  const partnerPhone = partnerMember?.profile?.swish_phone ?? null;
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await qc.invalidateQueries();
+    setRefreshing(false);
+  }
+
+  async function openSwish() {
+    if (!partnerPhone) {
+      Alert.alert(
+        'Swish-nummer saknas',
+        `${balancePartner?.display_name ?? 'Din sambo'} har inte lagt till sitt Swish-nummer. Be hen göra det under Inställningar.`,
+      );
+      return;
+    }
+    let payee = partnerPhone.trim();
+    if (payee.startsWith('+46')) payee = '0' + payee.slice(3);
+    else if (payee.startsWith('0046')) payee = '0' + payee.slice(4);
+    payee = payee.replace(/\D/g, '');
+    const data = {
+      version: 1,
+      payee: { value: payee, editable: false },
+      amount: { value: Math.round(absNet), editable: false },
+      message: { value: 'Nova avräkning', editable: true },
+    };
+    const url = `swish://payment?data=${encodeURIComponent(JSON.stringify(data))}`;
+    try {
+      await Linking.openURL(url);
+      await settleNow();
+    } catch {
+      Alert.alert('Swish hittades inte', 'Installera Swish-appen från App Store.');
+    }
+  }
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
@@ -91,43 +153,27 @@ export default function DashboardScreen() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  async function doSettle() {
+  async function settleNow() {
+    if (!profile || !balancePartner) return;
+    const fromUser = isOwing ? profile.id : balancePartner.id;
+    const toUser   = isOwing ? balancePartner.id : profile.id;
     try {
-      const fromUser = net < 0 ? profile!.id : balancePartner!.id;
-      const toUser   = net < 0 ? balancePartner!.id : profile!.id;
       await createSettlement.mutateAsync({ amount: absNet, fromUser, toUser });
     } catch (e: any) {
       Alert.alert('Fel', e.message);
     }
   }
 
-  function confirmSettle() {
-    const actionText = isOwing
-      ? `Du markerar att du betalat ${formattedNet} kr till ${balancePartner?.display_name ?? 'din sambo'}.`
-      : `Du markerar att du mottagit ${formattedNet} kr från ${balancePartner?.display_name ?? 'din sambo'}.`;
-    Alert.alert('Markera som betald', `${actionText}\n\nSaldot nollställs.`, [
-      { text: 'Avbryt', style: 'cancel' },
-      { text: 'Bekräfta', onPress: doSettle },
-    ]);
-  }
-
   function handleSettle() {
     if (!profile || !balancePartner || absNet < 1) return;
-    if (isOwing) {
-      Alert.alert(`Betala ${formattedNet} kr`, `till ${balancePartner.display_name ?? 'din sambo'}`, [
+    Alert.alert(
+      'Markera som mottaget',
+      `Du markerar att du fått ${formattedNet} kr av ${balancePartner.display_name ?? 'din sambo'}.\n\nSaldot nollställs.`,
+      [
         { text: 'Avbryt', style: 'cancel' },
-        {
-          text: '🔵 Öppna Swish',
-          onPress: () =>
-            Linking.openURL('swish://').catch(() =>
-              Alert.alert('Swish saknas', 'Swish verkar inte vara installerat.')
-            ),
-        },
-        { text: 'Markera manuellt', onPress: confirmSettle },
-      ]);
-    } else {
-      confirmSettle();
-    }
+        { text: 'Bekräfta', onPress: settleNow },
+      ]
+    );
   }
 
   function formatAmount(amount: number) {
@@ -145,6 +191,13 @@ export default function DashboardScreen() {
         style={{ flex: 1, opacity: fadeAnim }}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.textSecondary}
+          />
+        }
       >
         {/* Header */}
         <View style={styles.header}>
@@ -170,7 +223,6 @@ export default function DashboardScreen() {
           </Text>
           <AnimatedBalance value={net} />
 
-          {/* Progress bar */}
           {household && absNet > 0 && (
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${pct * 100}%` as any, backgroundColor: barColor }]} />
@@ -179,25 +231,53 @@ export default function DashboardScreen() {
 
           <Text style={styles.balanceSub}>
             {household
-              ? 'Sedan senaste avräkning'
+              ? absNet < 1 ? 'Avräknat — alla kvitt' : 'Sedan senaste avräkning'
               : 'Skapa ett hushåll för att spåra delat saldo'}
           </Text>
         </View>
 
         {/* Settle CTA */}
         {household && balancePartner && absNet >= 1 && (
-          <TouchableOpacity
-            style={[styles.settleBtn, createSettlement.isPending && { opacity: 0.5 }]}
-            onPress={handleSettle}
-            disabled={createSettlement.isPending}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.settleBtnText}>
-              {isOwing
-                ? `Betala ${formattedNet} kr →`
-                : `Markera ${formattedNet} kr som betald ✓`}
-            </Text>
-          </TouchableOpacity>
+          isOwing ? (
+            <View style={styles.swishGroup}>
+              <TouchableOpacity
+                style={styles.swishBtn}
+                onPress={openSwish}
+                activeOpacity={0.85}
+              >
+                <SwishGlyph size={18} color="white" />
+                <Text style={styles.swishBtnText}>
+                  Swisha {formattedNet} kr till {balancePartner.display_name ?? 'din sambo'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.settleLink}
+                onPress={() => router.push('/settle')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.settleLinkText}>Swisha annat belopp →</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.settleBtn, createSettlement.isPending && { opacity: 0.5 }]}
+              onPress={handleSettle}
+              disabled={createSettlement.isPending}
+              activeOpacity={0.85}
+            >
+              <CheckIcon size={16} color={colors.positive} />
+              <Text style={styles.settleBtnText}>
+                Markera {formattedNet} kr som mottaget
+              </Text>
+            </TouchableOpacity>
+          )
+        )}
+
+        {household && absNet < 1 && (
+          <View style={styles.evenRow}>
+            <CheckIcon size={16} color={colors.positive} />
+            <Text style={styles.evenText}>Avräknat — alla kvitt</Text>
+          </View>
         )}
 
         {/* Quick actions */}
@@ -303,6 +383,8 @@ export default function DashboardScreen() {
           </View>
         ) : null}
       </Animated.ScrollView>
+
+      {/* Swish flow — sheet */}
     </SafeAreaView>
   );
 }
@@ -352,11 +434,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 8,
   },
-  balanceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-  },
+  balanceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   balanceAmount: {
     fontSize: 64,
     fontWeight: '700',
@@ -364,11 +442,7 @@ const styles = StyleSheet.create({
     letterSpacing: -2.5,
     lineHeight: 68,
   },
-  balanceUnit: {
-    fontSize: 22,
-    fontWeight: '500',
-    color: colors.textSecondary,
-  },
+  balanceUnit: { fontSize: 22, fontWeight: '500', color: colors.textSecondary },
   progressTrack: {
     marginTop: 14,
     height: 2,
@@ -376,9 +450,7 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: '100%',
-  },
+  progressFill: { height: '100%' },
   balanceSub: {
     fontSize: 11,
     color: colors.textDisabled,
@@ -386,21 +458,65 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
+  swishGroup: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    gap: 10,
+  },
+  // Swish CTA — pink, primary
+  swishBtn: {
+    borderRadius: 12,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: SWISH_PINK,
+  },
+  swishBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: 'white',
+    letterSpacing: 0.2,
+  },
+  settleLink: {
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  settleLinkText: {
+    fontSize: 13,
+    color: colors.textDisabled,
+    fontWeight: '500',
+  },
+
+  // Settle CTA — outline, used when partner owes me
   settleBtn: {
     marginHorizontal: 20,
     marginBottom: 24,
     borderRadius: 12,
     paddingVertical: 13,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
     borderWidth: 1,
     borderColor: colors.positive + '55',
   },
-  settleBtnText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.positive,
+  settleBtnText: { fontSize: 14, fontWeight: '500', color: colors.positive },
+
+  evenRow: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    borderRadius: 12,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.positive + '55',
   },
+  evenText: { fontSize: 14, fontWeight: '500', color: colors.positive },
 
   quickGrid: {
     flexDirection: 'row',
@@ -418,21 +534,9 @@ const styles = StyleSheet.create({
     gap: 18,
     minHeight: 96,
   },
-  quickCardIcon: {
-    fontSize: 20,
-    color: colors.accentFrom,
-    fontWeight: '700',
-  },
-  quickCardTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.textPrimary,
-  },
-  quickCardSub: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
+  quickCardIcon: { fontSize: 20, color: colors.accentFrom, fontWeight: '700' },
+  quickCardTitle: { fontSize: 14, fontWeight: '500', color: colors.textPrimary },
+  quickCardSub: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
 
   section: { paddingHorizontal: 20, marginBottom: 24 },
   sectionRow: {
@@ -448,11 +552,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  sectionLink: {
-    fontSize: 13,
-    color: colors.accentFrom,
-    fontWeight: '500',
-  },
+  sectionLink: { fontSize: 13, color: colors.accentFrom, fontWeight: '500' },
 
   recentList: {
     backgroundColor: colors.surface,
@@ -461,22 +561,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
   },
-  recentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    gap: 12,
-  },
-  recentRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
-  },
+  recentRow: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
+  recentRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   recentIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
   },
   recentIconText: { fontSize: 16 },
   recentMid: { flex: 1 },

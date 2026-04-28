@@ -5,6 +5,7 @@ export type Profile = {
   email: string;
   display_name: string | null;
   avatar_url: string | null;
+  swish_phone: string | null;
   created_at: string;
 };
 
@@ -56,6 +57,7 @@ export type Expense = {
   reviewed: boolean;
   currency?: string;        // default 'SEK' (satt av DB)
   source_hash?: string;     // för CSV-importdubblettdetektering
+  receipt_path: string | null;
   updated_at: string | null;
   updated_by: string | null;
   created_at: string;

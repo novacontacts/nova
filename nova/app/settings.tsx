@@ -1,27 +1,49 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Share, Linking, Switch } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator,
+  ScrollView, Share, Linking, Switch, Modal, TextInput, KeyboardAvoidingView, Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/lib/store/auth';
 import { useHouseholdStore } from '@/lib/store/household';
 import { useBalance } from '@/hooks/useExpenses';
 import { useLocalAuth } from '@/hooks/useLocalAuth';
+import { useUpdateProfile, normalizeSwishPhone } from '@/hooks/useUpdateProfile';
 import { supabase } from '@/lib/supabase';
 import { colors, typography, spacing, radius } from '@/constants/theme';
 
-// Uppdatera dessa URL:er när sidor är live
 const PRIVACY_URL = 'https://novaapp.se/privacy';
 const TERMS_URL   = 'https://novaapp.se/terms';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { profile, signOut } = useAuthStore();
-  const { household, reset: resetHousehold } = useHouseholdStore();
+  const { household, members, reset: resetHousehold } = useHouseholdStore();
   const { net } = useBalance();
   const { isSupported, isEnabled, isLoaded, toggle: toggleBiometric } = useLocalAuth();
+  const updateProfile = useUpdateProfile();
   const [isLeaving, setIsLeaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [phoneModalOpen, setPhoneModalOpen] = useState(false);
+  const [phoneInput, setPhoneInput] = useState(profile?.swish_phone ?? '');
+
+  const partner = members.find((m) => m.user_id !== profile?.id)?.profile;
+
+  async function handleSavePhone() {
+    const normalized = normalizeSwishPhone(phoneInput);
+    if (phoneInput.trim() && !normalized?.match(/^\+\d{8,15}$/)) {
+      Alert.alert('Felaktigt nummer', 'Använd format 070... eller +46...');
+      return;
+    }
+    try {
+      await updateProfile.mutateAsync({ swish_phone: normalized });
+      setPhoneModalOpen(false);
+    } catch (e: any) {
+      Alert.alert('Fel', e.message);
+    }
+  }
 
   async function handleExportData() {
     setIsExporting(true);
@@ -143,6 +165,40 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Swish */}
+        <Text style={styles.sectionLabel}>Swish</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => { setPhoneInput(profile?.swish_phone ?? ''); setPhoneModalOpen(true); }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowText}>Mitt Swish-nummer</Text>
+              <Text style={styles.rowSub}>
+                {profile?.swish_phone ?? 'Inte angivet — Swish-länkar förifylls inte'}
+              </Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+
+          {partner && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowText}>{partner.display_name ?? 'Sambo'}</Text>
+                  <Text style={styles.rowSub}>
+                    {partner.swish_phone ? partner.swish_phone : 'Sambo har inte angivit Swish-nummer'}
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
+        </View>
+        <Text style={styles.dangerNote}>
+          Numret används för att förifylla mottagare i Swish-appen när du gör en avräkning.
+        </Text>
+
         {/* Konto-åtgärder */}
         <Text style={styles.sectionLabel}>Konto</Text>
         <View style={styles.card}>
@@ -178,7 +234,7 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        {/* Säkerhet (D1) */}
+        {/* Säkerhet */}
         {isLoaded && isSupported && (
           <>
             <Text style={styles.sectionLabel}>Säkerhet</Text>
@@ -196,7 +252,7 @@ export default function SettingsScreen() {
           </>
         )}
 
-        {/* Data (B3 + B4) */}
+        {/* Data */}
         <Text style={styles.sectionLabel}>Data & juridik</Text>
         <View style={styles.card}>
           <TouchableOpacity style={styles.row} onPress={handleExportData} disabled={isExporting}>
@@ -238,6 +294,54 @@ export default function SettingsScreen() {
         </Text>
 
       </ScrollView>
+
+      {/* Swish-nummer modal */}
+      <Modal visible={phoneModalOpen} transparent animationType="slide" onRequestClose={() => setPhoneModalOpen(false)}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setPhoneModalOpen(false)}
+          >
+            <TouchableOpacity activeOpacity={1} style={styles.modalSheet} onPress={() => {}}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Ditt Swish-nummer</Text>
+              <Text style={styles.modalSub}>
+                Används när din sambo öppnar Swish för att betala dig.
+              </Text>
+              <TextInput
+                style={styles.modalInput}
+                value={phoneInput}
+                onChangeText={setPhoneInput}
+                placeholder="070-123 45 67"
+                placeholderTextColor={colors.textDisabled}
+                keyboardType="phone-pad"
+                autoFocus
+                selectionColor={colors.accentFrom}
+              />
+              <TouchableOpacity
+                style={styles.modalSave}
+                onPress={handleSavePhone}
+                disabled={updateProfile.isPending}
+                activeOpacity={0.85}
+              >
+                {updateProfile.isPending
+                  ? <ActivityIndicator color={colors.bg} size="small" />
+                  : <Text style={styles.modalSaveText}>Spara</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setPhoneModalOpen(false)}
+              >
+                <Text style={styles.modalCancelText}>Avbryt</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -275,42 +379,59 @@ const styles = StyleSheet.create({
     padding: spacing.base,
   },
   profileAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 48, height: 48, borderRadius: 24,
     backgroundColor: colors.accentFrom + '30',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
   profileInitial: { fontSize: typography.xl, fontWeight: '700', color: colors.accentFrom },
   profileName: { fontSize: typography.base, fontWeight: '600', color: colors.textPrimary },
   profileEmail: { fontSize: typography.sm, color: colors.textSecondary },
 
   sectionLabel: {
-    fontSize: typography.xs,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginTop: spacing.md,
-    marginLeft: spacing.xs,
+    fontSize: typography.xs, fontWeight: '700', color: colors.textSecondary,
+    textTransform: 'uppercase', letterSpacing: 0.8,
+    marginTop: spacing.md, marginLeft: spacing.xs,
   },
 
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.base,
-    minHeight: 52,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: spacing.base, minHeight: 52, gap: spacing.md,
   },
   rowText: { fontSize: typography.base, fontWeight: '500', color: colors.textPrimary },
+  rowSub: { fontSize: typography.xs, color: colors.textSecondary, marginTop: 2 },
   chevron: { fontSize: typography.xl, color: colors.textDisabled },
   divider: { height: 1, backgroundColor: colors.borderSubtle, marginLeft: spacing.base },
 
   dangerNote: {
-    fontSize: typography.xs,
-    color: colors.textDisabled,
-    paddingHorizontal: spacing.xs,
-    lineHeight: 18,
+    fontSize: typography.xs, color: colors.textDisabled,
+    paddingHorizontal: spacing.xs, lineHeight: 18,
   },
+
+  // Modal
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  modalHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: spacing.sm },
+  modalTitle: { fontSize: typography.lg, fontWeight: '700', color: colors.textPrimary },
+  modalSub: { fontSize: typography.sm, color: colors.textSecondary },
+  modalInput: {
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, height: 52,
+    fontSize: typography.lg, color: colors.textPrimary,
+    fontWeight: '500', letterSpacing: 0.5,
+  },
+  modalSave: {
+    backgroundColor: colors.textPrimary,
+    borderRadius: radius.full, paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalSaveText: { fontSize: typography.base, fontWeight: '700', color: colors.bg },
+  modalCancel: { paddingVertical: spacing.sm, alignItems: 'center' },
+  modalCancelText: { fontSize: typography.sm, color: colors.textSecondary },
 });
